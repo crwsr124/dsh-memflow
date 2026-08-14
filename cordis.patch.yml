@@ -1,0 +1,7 @@
+# dsh-memflow bundle patch: mounts the framework row into the host composition.
+# Defaults serve package-local protocol; deployments pinning a live protocol
+# file override the row config in their own cordis.patch.yml (whole-config
+# replacement — the plugin fills missing keys with defaults).
+- insert:
+    - id: dsh-memflow
+      name: dsh-memflow

@@ -10,7 +10,8 @@
   },
   "files": [
     "index.js",
-    "MEMFLOW.md"
+    "MEMFLOW.md",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "keywords": [
@@ -19,5 +20,10 @@
     "memory",
     "agent",
     "dsh-plugin"
-  ]
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
 }

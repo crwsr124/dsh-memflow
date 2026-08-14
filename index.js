@@ -142,6 +142,86 @@ function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes) {
 	return parts.join('\n\n');
 }
 
+const PRESET_ID = 'memflow';
+const PRESET_NAME = '\u8bb0\u5fc6\u6d41\u6a21\u5f0f';
+const STANDARD_PERSONA_BLOCK = `    text: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.`;
+const MEMFLOW_PERSONA_BLOCK = `    text: |-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+      {{memflow_protocol}}`;
+/** Subagent rows to disable in the copied preset: [original block, disabled block]. */
+const SUBAGENT_ROWS_TO_DISABLE = [
+	[`    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable`,
+	`    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable`],
+	[`    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable`,
+	`    - id: tool-subagent-fork
+      name: '@deepseek-ai/dsh-tool-subagent'
+      disabled: true
+      config:
+        provider: fork
+        toolName: subagent_fork
+        backgroundMode: continuable`]
+];
+
+/**
+ * Provision the memflow preset on first activation: copy the standard preset
+ * into the user authoring root, then rewrite its persona row to reference the
+ * live {{memflow_protocol}} variable and disable the built-in subagent rows
+ * (workers delegate through `delegate` only). Idempotent and non-destructive:
+ * an existing preset is never touched, and every edit is best-effort with a
+ * warning instead of a boot failure. Runs only where the agentPresets service
+ * is mounted (web); headless deployments skip it silently.
+ */
+async function provisionPreset(ctx) {
+	let presets;
+	try {
+		presets = ctx.get('agentPresets');
+	} catch {
+		return;
+	}
+	if (presets === void 0 || !presets.authorable) return;
+	try {
+		if ((await presets.list()).some((preset) => preset.id === PRESET_ID)) return;
+		await presets.copy('standard', PRESET_ID, PRESET_NAME);
+		const created = await presets.resolve(PRESET_ID);
+		let content = fs.readFileSync(created.path, 'utf8');
+		let edited = false;
+		if (content.includes(STANDARD_PERSONA_BLOCK)) {
+			content = content.replace(STANDARD_PERSONA_BLOCK, MEMFLOW_PERSONA_BLOCK);
+			edited = true;
+		} else {
+			ctx.logger.warn(`dsh-memflow: standard persona block not found in copied preset; persona left untouched (protocol not wired)`);
+		}
+		for (const [original, disabled] of SUBAGENT_ROWS_TO_DISABLE) {
+			if (content.includes(original)) {
+				content = content.replace(original, disabled);
+				edited = true;
+			}
+		}
+		if (edited) fs.writeFileSync(created.path, content);
+		ctx.logger.info(`dsh-memflow: provisioned preset "${PRESET_ID}" (${PRESET_NAME}) with live {{memflow_protocol}} persona`);
+	} catch (error) {
+		ctx.logger.warn(`dsh-memflow: preset provisioning skipped: ${error instanceof Error ? error.message : String(error)}`);
+	}
+}
+
 function apply(ctx, config = {}) {
 	const protocolFile = typeof config.protocolFile === 'string' ? config.protocolFile : DEFAULT_PROTOCOL_FILE;
 	const maxInlineBytes = Number.isFinite(config.maxInlineBytes) && config.maxInlineBytes >= 0 ? config.maxInlineBytes : DEFAULT_MAX_INLINE_BYTES;
@@ -311,6 +391,9 @@ function apply(ctx, config = {}) {
 	const present = ctx.subagents.getProvider(provider);
 	if (present !== void 0) mount(present);
 	else ctx.logger.info(`dsh-memflow: subagent provider "${provider}" not registered yet; the "${toolName}" tool will register when it appears`);
+
+	// 4) Auto-provision the memflow preset (create-if-missing, web only).
+	void provisionPreset(ctx);
 }
 
 export { apply, inject, name };
