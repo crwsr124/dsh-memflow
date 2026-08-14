@@ -150,42 +150,12 @@ const MEMFLOW_PERSONA_BLOCK = `    text: |-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
       {{memflow_protocol}}`;
-/** Subagent rows to disable in the copied preset: [original block, disabled block]. */
-const SUBAGENT_ROWS_TO_DISABLE = [
-	[`    - id: tool-subagent
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: spawn
-        toolName: subagent
-        backgroundMode: continuable`,
-	`    - id: tool-subagent
-      name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: true
-      config:
-        provider: spawn
-        toolName: subagent
-        backgroundMode: continuable`],
-	[`    - id: tool-subagent-fork
-      name: '@deepseek-ai/dsh-tool-subagent'
-      config:
-        provider: fork
-        toolName: subagent_fork
-        backgroundMode: continuable`,
-	`    - id: tool-subagent-fork
-      name: '@deepseek-ai/dsh-tool-subagent'
-      disabled: true
-      config:
-        provider: fork
-        toolName: subagent_fork
-        backgroundMode: continuable`]
-];
-
 /**
  * Provision the memflow preset on first activation: copy the standard preset
  * into the user authoring root, then rewrite its persona row to reference the
- * live {{memflow_protocol}} variable and disable the built-in subagent rows
- * (workers delegate through `delegate` only). Idempotent and non-destructive:
- * an existing preset is never touched, and every edit is best-effort with a
+ * live {{memflow_protocol}} variable. The copy stays identical to standard in
+ * every other way (tools included). Idempotent and non-destructive: an
+ * existing preset is never touched, and every edit is best-effort with a
  * warning instead of a boot failure. Runs only where the agentPresets service
  * is mounted (web); headless deployments skip it silently.
  */
@@ -208,12 +178,6 @@ async function provisionPreset(ctx) {
 			edited = true;
 		} else {
 			ctx.logger.warn(`dsh-memflow: standard persona block not found in copied preset; persona left untouched (protocol not wired)`);
-		}
-		for (const [original, disabled] of SUBAGENT_ROWS_TO_DISABLE) {
-			if (content.includes(original)) {
-				content = content.replace(original, disabled);
-				edited = true;
-			}
 		}
 		if (edited) fs.writeFileSync(created.path, content);
 		ctx.logger.info(`dsh-memflow: provisioned preset "${PRESET_ID}" (${PRESET_NAME}) with live {{memflow_protocol}} persona`);
