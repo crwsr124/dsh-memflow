@@ -1,0 +1,316 @@
+/**
+ * dsh-memflow — MEMFLOW memory framework for DeepSeek Harness.
+ *
+ * Two deliverables:
+ * 1. Global prompt variable `memflow_protocol` — live-reads MEMFLOW.md on every
+ *    prompt assembly (file edits take effect on the next assembly, no drift).
+ *    Presets reference it as {{memflow_protocol}} in their persona row.
+ * 2. The `delegate` tool — spawns a MEMFLOW worker subagent with a prepared
+ *    task dossier:
+ *    - persona (order-0 system prompt) = the live MEMFLOW protocol,
+ *    - first user message = task + dossier (project_dir + inlined context_files),
+ *    - toolFilter denies delegation tools so workers cannot recurse,
+ *    - three completion modes mirror the built-in subagent tool: foreground
+ *      (tool result = worker's final summary), background one-shot (job id,
+ *      in-session notice on settle), continuable (durable subagent id,
+ *      settlement notice + report channel + send_message follow-ups).
+ *
+ * 🔴 ZERO @deepseek-ai dependencies are deliberate. Out-of-tree profile
+ * plugins whose dependencies are ALSO composition rows (dsh-tools,
+ * dsh-subagent, dsh-session, …) shadow the host row's module resolution once
+ * present in the profile node_modules: the registry then runs from the
+ * profile copy while the loop imports from the installation copy, their
+ * Symbol identities split, and the first tool call crashes with
+ * "Cannot read properties of undefined (reading 'prepare')". Everything here
+ * therefore goes through injected services (ctx.tools / ctx.subagents /
+ * ctx.get('jobs') / ctx.systemPrompt) and hand-rolled plain-JSON schemas.
+ *
+ * The protocol file must be free of `{{` sequences: substituted values are
+ * never re-scanned, but section text (the persona row referencing the
+ * variable) is interpolated once — the file content itself is not.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const name = 'dsh-memflow';
+const inject = ['tools', 'subagents', 'systemPrompt'];
+
+const DEFAULT_PROTOCOL_FILE = fileURLToPath(new URL('MEMFLOW.md', import.meta.url));
+const DEFAULT_MAX_INLINE_BYTES = 32 * 1024;
+// Only names that exist in the runtime registry: toolFilter denies are
+// validated against registered tools, and the product providers
+// (codex/claude-code) are disabled in the shipped presets, so naming them
+// would fail the filter. Extend via config.denyTools when a deployment
+// registers them.
+const DEFAULT_DENY_TOOLS = ['subagent', 'subagent_fork', 'delegate'];
+
+/** Read the protocol file, or null when unreadable. */
+function readProtocol(protocolFile) {
+	try {
+		return fs.readFileSync(protocolFile, 'utf8');
+	} catch {
+		return null;
+	}
+}
+
+/** A non-`completed` stop reason means the child did not finish cleanly. */
+function stopReasonError(result) {
+	switch (result.stopReason) {
+		case 'completed': return;
+		case 'aborted': return 'subagent run was cancelled';
+		case 'error': return 'subagent run failed';
+		case 'max-tokens': return 'subagent run hit its token limit before finishing';
+		case 'refusal': return 'subagent declined the task';
+		default: return `subagent run ended abnormally (${String(result.stopReason)})`;
+	}
+}
+
+/** Append the child's preserved partial answer to a stop-reason error. */
+function withPartialText(error, output) {
+	const text = output.filter((block) => block.type === 'text').map((block) => block.text).join('');
+	return text.length === 0 ? error : `${error}\nPartial output before the run ended:\n${text}`;
+}
+
+/** Collect and release one foreground run without letting disposal replace an independent result failure. */
+async function settleForegroundRun(run) {
+	const [execution] = await Promise.allSettled([run.result.then((result) => {
+		const error = stopReasonError(result);
+		if (error !== void 0) throw new Error(withPartialText(error, result.output));
+		return {
+			kind: 'foreground',
+			runId: run.id,
+			output: result.output
+		};
+	})]);
+	const [disposal] = await Promise.allSettled([Promise.resolve().then(() => run.dispose())]);
+	if (execution.status === 'rejected') {
+		if (disposal.status === 'rejected') throw new AggregateError([execution.reason, disposal.reason], `subagent run failed: ${String(execution.reason)}; dispose failed: ${String(disposal.reason)}`);
+		throw execution.reason;
+	}
+	if (disposal.status === 'rejected') throw disposal.reason;
+	return execution.value;
+}
+
+/** Settle a background run, mapping cancellation to a killed status. */
+async function settleStart(start, signal) {
+	try {
+		const run = await start;
+		try {
+			const result = await run.result;
+			await run.dispose();
+			return result;
+		} catch (error) {
+			return signal.aborted ? { status: 'killed' } : { status: 'failed', detail: String(error) };
+		}
+	} catch (error) {
+		return signal.aborted ? { status: 'killed' } : { status: 'failed', detail: String(error) };
+	}
+}
+
+/** Render text blocks from the canonical JSON block array. */
+function outputValueText(values) {
+	return values.filter((value) => typeof value === 'object' && value !== null && !Array.isArray(value) && value.type === 'text' && typeof value.text === 'string').map((value) => value.text).join('');
+}
+
+/**
+ * Assemble the task dossier: project_dir, then each context file inlined
+ * (contents up to the per-file cap; larger files are listed with their path
+ * so the worker reads them itself).
+ */
+function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes) {
+	const parts = [`工作目录（项目根）: ${projectDir}`];
+	if (contextFiles.length === 0) {
+		parts.push('额外必读文件: 无（按协议默认感知工作目录下 memory/）。');
+		return parts.join('\n\n');
+	}
+	parts.push('额外必读文件（由委派方指定，感知时优先）:');
+	for (const file of contextFiles) {
+		const abs = path.isAbsolute(file) ? file : path.resolve(baseDir, file);
+		try {
+			const stat = fs.statSync(abs);
+			if (stat.size > maxInlineBytes) {
+				parts.push(`- ${abs}\n  （文件较大，未内联；开始工作前自行完整读取）`);
+			} else {
+				const content = fs.readFileSync(abs, 'utf8');
+				parts.push(`- ${abs}\n${'='.repeat(40)}\n${content}`);
+			}
+		} catch (error) {
+			parts.push(`- ${abs}\n  （读取失败: ${error.message}）`);
+		}
+	}
+	return parts.join('\n\n');
+}
+
+function apply(ctx, config = {}) {
+	const protocolFile = typeof config.protocolFile === 'string' ? config.protocolFile : DEFAULT_PROTOCOL_FILE;
+	const maxInlineBytes = Number.isFinite(config.maxInlineBytes) && config.maxInlineBytes >= 0 ? config.maxInlineBytes : DEFAULT_MAX_INLINE_BYTES;
+	const denyTools = Array.isArray(config.denyTools) ? config.denyTools : DEFAULT_DENY_TOOLS;
+	const backgroundEnabled = config.enableRunInBackground !== false;
+	const continuable = config.backgroundMode === 'continuable';
+	const provider = typeof config.provider === 'string' ? config.provider : 'spawn';
+	const toolName = typeof config.toolName === 'string' ? config.toolName : 'delegate';
+	const maxDepth = config.maxDepth ?? 1;
+	if (maxDepth !== 'provider-managed' && (!Number.isSafeInteger(maxDepth) || maxDepth < 0)) throw new Error(`dsh-memflow: maxDepth must be a non-negative safe integer or 'provider-managed', got ${JSON.stringify(config.maxDepth)}`);
+
+	// 1) Live protocol variable for presets (persona row: {{memflow_protocol}}).
+	ctx.systemPrompt.variable('memflow_protocol', () => readProtocol(protocolFile) ?? '');
+
+	// 2) Model-facing guidance for the delegate tool.
+	ctx.effect(() => ctx.systemPrompt.section({
+		name: 'tool:delegate',
+		order: 117,
+		text: `Delegate project work with the ${toolName} tool: give the worker a complete, self-contained task prompt and list in context_files every file it must load beyond its default project-memory perception (memory files, shared conventions, device notes). Contents are inlined into the worker context up to a per-file cap. The worker runs under the MEMFLOW protocol in project_dir, maintains that project's memory/, and returns a self-contained work summary (what was done, files changed, acceptance status, leftovers). Prefer a foreground call when your next action depends on the result; prefer background for independent parallel work.`
+	}), 'dsh-memflow.section()');
+
+	// 3) The delegate tool, mounted once its provider is available.
+	let disposeTool;
+	const mount = (subagentProvider) => {
+		if (typeof maxDepth === 'number' && !subagentProvider.capabilities.depthLimit) throw new Error(`dsh-memflow: provider "${subagentProvider.name}" cannot enforce maxDepth (no depthLimit capability) — set maxDepth: 'provider-managed' to leave the recursion budget to the provider`);
+		if (continuable && subagentProvider.prepareContinuable === void 0) throw new Error(`dsh-memflow: provider "${subagentProvider.name}" does not support backgroundMode: continuable`);
+		const backgroundWording = backgroundEnabled ? continuable
+			? ' This tool runs in the background by default, immediately returns a durable subagent id, and keeps the child conversation available for later turns. When that run settles, the runtime sends you a notice containing its outcome and any final assistant message; send_message starts a later turn in the same child conversation. Set run_in_background: false only when your next action depends on receiving the result.'
+			: ' This call waits for the result by default. Set run_in_background: true to return a job id; collect with job_output and stop with job_kill.'
+			: ' This call waits for the worker and returns its result.';
+		const toolDefinition = {
+			name: toolName,
+			description: `Delegate a task to a MEMFLOW worker subagent with a prepared context dossier. The worker is a separate agent working in its own context under the MEMFLOW memory protocol: it establishes project-memory perception before acting and returns a self-contained work summary instead of intermediate steps. Use context_files to hand it files beyond its default project-memory perception (shared conventions, other projects' memory, device notes); contents are inlined up to a per-file cap.` + backgroundWording,
+			parameters: {
+				type: 'object',
+				properties: {
+					description: {
+						type: 'string',
+						description: 'A short (3-5 word) description of the delegated task, for display.'
+					},
+					prompt: {
+						type: 'string',
+						description: 'The complete, self-contained task for the worker (goal, constraints, acceptance criteria). It does not share this conversation, so include everything it needs.'
+					},
+					context_files: {
+						type: 'array',
+						items: { type: 'string' },
+						description: 'Paths of files to prepare for the worker, absolute or relative to this session working directory. Contents are inlined into the worker context (files above the inline cap are listed with their path so the worker reads them itself). Use it for memory files and task-relevant files beyond the worker default project-memory perception.'
+					},
+					project_dir: {
+						type: 'string',
+						description: 'The directory the worker treats as its project (default memory perception root). Defaults to this session working directory.'
+					},
+					run_in_background: {
+						type: 'boolean',
+						description: continuable ? 'Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it.' : 'Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill.'
+					}
+				},
+				required: ['description', 'prompt']
+			},
+			output: {
+				schema: {
+					oneOf: [
+						{
+							type: 'object',
+							additionalProperties: false,
+							required: ['kind', 'jobId'],
+							properties: {
+								kind: { type: 'string', const: 'background' },
+								jobId: { type: 'string' }
+							}
+						},
+						{
+							type: 'object',
+							additionalProperties: false,
+							required: ['kind', 'subagentId'],
+							properties: {
+								kind: { type: 'string', const: 'continuable' },
+								subagentId: { type: 'string' }
+							}
+						},
+						{
+							type: 'object',
+							additionalProperties: false,
+							required: ['kind', 'runId', 'output'],
+							properties: {
+								kind: { type: 'string', const: 'foreground' },
+								runId: { type: 'string' },
+								output: { type: 'array', items: { type: 'object' } }
+							}
+						}
+					]
+				},
+				render: (_args, value) => [{
+					type: 'text',
+					text: value.kind === 'background' ? `started background subagent task ${value.jobId}` : value.kind === 'continuable' ? `started subagent ${value.subagentId}` : outputValueText(value.output)
+				}]
+			},
+			isConcurrencySafe: () => true,
+			async execute(args, exec) {
+				const parent = exec.agent;
+				if (!parent) throw new Error('delegate tool requires a calling agent (exec.agent was undefined)');
+				const protocol = readProtocol(protocolFile);
+				if (protocol === null) throw new Error(`dsh-memflow: protocol file unreadable: ${protocolFile}`);
+				const baseDir = parent.session.header.cwd ?? process.cwd();
+				const projectDir = path.resolve(args.project_dir !== undefined && args.project_dir !== '' ? args.project_dir : baseDir);
+				const dossier = buildDossier(Array.isArray(args.context_files) ? args.context_files : [], baseDir, projectDir, maxInlineBytes);
+				const promptText = `任务（由委派方指派）: ${args.description}\n\n${args.prompt}\n\n--- 委派上下文 dossier ---\n${dossier}\n--- dossier 结束 ---`;
+				const persona = `You are a memflow worker subagent delegated by another agent.\n\n${protocol}`;
+				const request = {
+					label: args.description,
+					prompt: [{ type: 'text', text: promptText }],
+					parent,
+					persona,
+					toolFilter: { deny: denyTools },
+					...(maxDepth !== 'provider-managed' ? { maxDepth } : {})
+				};
+				if (!backgroundEnabled && args.run_in_background === true) throw new Error('run_in_background is disabled for this tool instance (enableRunInBackground: false)');
+				const runInBackground = backgroundEnabled ? (args.run_in_background ?? continuable) : false;
+				if (continuable && runInBackground) {
+					const started = await ctx.subagents.startContinuable({
+						provider,
+						label: args.description,
+						request,
+						signal: exec.signal
+					});
+					return { kind: 'continuable', subagentId: started.childId };
+				}
+				if (runInBackground) {
+					const jobs = ctx.get('jobs');
+					if (jobs === void 0) throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs');
+					const controller = new AbortController();
+					return {
+						kind: 'background',
+						jobId: jobs.start({
+							kind: 'subagent',
+							label: args.description,
+							owner: parent,
+							run: () => ({
+								cancel: (reason) => {
+									controller.abort(reason ?? 'background subagent task killed');
+								},
+								done: settleStart(ctx.subagents.start(provider, {
+									...request,
+									signal: controller.signal
+								}), controller.signal)
+							})
+						})
+					};
+				}
+				return settleForegroundRun(await ctx.subagents.start(provider, {
+					...request,
+					signal: exec.signal
+				}));
+			}
+		};
+		disposeTool = ctx.tools.register(toolDefinition);
+	};
+	ctx.on('subagent/provider-added', (subagentProvider) => {
+		if (subagentProvider.name === provider && disposeTool === void 0) mount(subagentProvider);
+	});
+	ctx.on('subagent/provider-removed', (providerName) => {
+		if (providerName !== provider || disposeTool === void 0) return;
+		disposeTool();
+		disposeTool = void 0;
+	});
+	const present = ctx.subagents.getProvider(provider);
+	if (present !== void 0) mount(present);
+	else ctx.logger.info(`dsh-memflow: subagent provider "${provider}" not registered yet; the "${toolName}" tool will register when it appears`);
+}
+
+export { apply, inject, name };

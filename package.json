@@ -1,0 +1,23 @@
+{
+  "name": "dsh-memflow",
+  "version": "0.1.0",
+  "description": "MEMFLOW memory framework for DeepSeek Harness: live protocol variable + delegate tool that spawns protocol-driven worker subagents with prepared context dossiers",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./MEMFLOW.md": "./MEMFLOW.md"
+  },
+  "files": [
+    "index.js",
+    "MEMFLOW.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "memory",
+    "agent",
+    "dsh-plugin"
+  ]
+}
