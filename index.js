@@ -331,8 +331,8 @@ function apply(ctx, config = {}) {
 
 	// 1) Live protocol variable for presets (persona row: {{memflow_protocol}}).
 	ctx.systemPrompt.variable('memflow_protocol', (context) => {
-		// 抑制目录（如 PCAgent 根，有自己的协议）不注入 memflow 协议——
-		// preset persona 只剩 harness 框定，效果等同标准模式。
+		// 抑制目录（部署配置列出的、携带自身 agent 协议的目录）不注入
+		// memflow 协议——preset persona 只剩 harness 框定，效果等同标准模式。
 		const cwd = context.agent?.session?.header?.cwd;
 		if (cwd !== void 0 && isSuppressed(suppressRoots, cwd)) return '';
 		return readProtocol(protocolFile) ?? '';
