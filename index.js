@@ -118,6 +118,18 @@ const DEFAULT_MEMORY_PRIORITY = ['status', 'tasks', 'notes', 'brick_index', 'his
 const DEFAULT_MEMORY_PER_FILE_BYTES = 8 * 1024;
 const DEFAULT_MEMORY_TOTAL_BYTES = 64 * 1024;
 
+/** Classify a directory's memory/ state: missing / empty / ok (has .md files). */
+function describeMemoryDir(cwd) {
+	const memoryDir = path.join(cwd, 'memory');
+	let entries;
+	try {
+		entries = fs.readdirSync(memoryDir, { withFileTypes: true });
+	} catch {
+		return 'missing';
+	}
+	return entries.some((entry) => entry.isFile() && entry.name.endsWith('.md')) ? 'ok' : 'empty';
+}
+
 /**
  * Mechanically load ALL .md files in a directory's memory/ root into text:
  * priority names first (framework order), every other .md file afterwards in
@@ -182,8 +194,10 @@ function loadMemoryText(cwd, priority, perFileBytes, totalBytes) {
  */
 function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes, memoryPriority, memoryPerFileBytes, memoryTotalBytes) {
 	const parts = [`工作目录（项目根）: ${projectDir}`];
-	const memoryText = loadMemoryText(projectDir, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
-	parts.push(memoryText === '' ? '默认感知（项目 memory/，机械加载）: 无（目录无 memory/ 或不可读）' : `默认感知（项目 memory/，机械加载）:\n${memoryText}`);
+	const memoryState = describeMemoryDir(projectDir);
+	const memoryText = memoryState === 'ok' ? loadMemoryText(projectDir, memoryPriority, memoryPerFileBytes, memoryTotalBytes) : '';
+	if (memoryText !== '') parts.push(`默认感知（项目 memory/，机械加载）:\n${memoryText}`);
+	else parts.push(`默认感知（项目 memory/，机械加载）: ${memoryState === 'missing' ? 'memory/ 目录不存在（按协议初始化骨架）' : memoryState === 'empty' ? 'memory/ 存在但无 .md 文件（按协议初始化骨架）' : '不可读'}`);
 	if (contextFiles.length === 0) {
 		parts.push('额外必读文件: 无。');
 		return parts.join('\n\n');
@@ -325,15 +339,24 @@ function apply(ctx, config = {}) {
 		}
 		const cwd = agent.session.header.cwd;
 		if (cwd === void 0) return void 0;
-		const snapshot = loadMemoryText(cwd, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
-		if (snapshot === '') return void 0;
+		const state = describeMemoryDir(cwd);
+		let text;
+		if (state === 'ok') {
+			const snapshot = loadMemoryText(cwd, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
+			if (snapshot === '') return void 0;
+			text = snapshot;
+		} else {
+			text = state === 'missing'
+				? `工作目录记忆：${path.join(cwd, 'memory')} 目录不存在（尚未初始化）。按协议在工作开始前初始化记忆骨架（见协议「目录结构」一节）。`
+				: `工作目录记忆：${path.join(cwd, 'memory')} 目录存在但没有 .md 记忆文件。按协议初始化骨架文件（见协议「目录结构」一节）。`;
+		}
 		// 🔴 消息必须带非空 id：会话持久化重载时 assertMessageEventShape
 		// 校验（官方惯例 id = crypto.randomUUID()），缺失会导致
 		// SessionPersistenceCorruptionError "lacks an identified message"。
 		return {
 			id: randomUUID(),
 			role: 'user',
-			content: [{ type: 'text', text: snapshot }],
+			content: [{ type: 'text', text }],
 			source: { kind: 'plugin', plugin: 'dsh-memflow', form: 'memory-snapshot' }
 		};
 	};
