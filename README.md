@@ -1,7 +1,12 @@
+<p align="center">
+  <img src="docs/banner.png" alt="MEMFLOW 记忆流模式 — DeepSeek Harness 记忆框架插件" width="100%">
+</p>
+
 # dsh-memflow
 
 > **MEMFLOW 记忆流模式** —— DeepSeek Harness 的记忆框架插件。
 >
+> **会话会结束，记忆不会**：感知先行、边做边记、落盘交接。
 > **分布式记忆架构，每个项目都有自己的记忆，一个插件让你的所有工作流实现类 Hermes 效果。**
 
 [English](#english) · [协议全文](MEMFLOW.md) · [License](LICENSE)
@@ -15,6 +20,10 @@ MEMFLOW 是 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-har
 > 任何 AI 会话的关键状态都不应只停留在对话里——会话结束即永久丢失。
 
 因此每个工作目录（项目）都拥有自己的 `memory/` 持久记忆：会话开始时**机械加载**当前目录的记忆快照、工作中**边做边记**、结束后**落盘交接**。任何新会话只要打开同一目录，就能完整恢复现状。所有项目的记忆各自独立、互不干扰——这就是分布式记忆架构。
+
+<p align="center">
+  <img src="docs/flow.png" alt="MEMFLOW 模式循环：新会话 → 感知 → 工作 → 落盘 → 新会话" width="92%">
+</p>
 
 **一个协议、三个载具**：
 
