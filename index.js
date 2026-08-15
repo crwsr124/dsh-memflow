@@ -329,6 +329,10 @@ function apply(ctx, config = {}) {
 
 	const suppressRoots = (Array.isArray(config.suppressRoots) ? config.suppressRoots : []).map((root) => path.resolve(root));
 	const memoryBootstrap = config.memoryBootstrap !== false;
+	// Attach the protocol text to rosterless (headless) bootstrap messages.
+	// Deployments that wire {{memflow_protocol}} into a patched headless
+	// persona set this to false to avoid double injection.
+	const rosterlessProtocol = config.rosterlessProtocol !== false;
 	const memoryPriority = Array.isArray(config.memoryPriority) ? config.memoryPriority : DEFAULT_MEMORY_PRIORITY;
 	const memoryPerFileBytes = Number.isFinite(config.memoryPerFileBytes) && config.memoryPerFileBytes >= 0 ? config.memoryPerFileBytes : DEFAULT_MEMORY_PER_FILE_BYTES;
 	const memoryTotalBytes = Number.isFinite(config.memoryTotalBytes) && config.memoryTotalBytes >= 0 ? config.memoryTotalBytes : DEFAULT_MEMORY_TOTAL_BYTES;
@@ -392,7 +396,7 @@ function apply(ctx, config = {}) {
 		// plugin's core promise (every project has memory capability) holds for
 		// top-level headless runs too. Order mirrors web: rules first, snapshot
 		// after (persona precedes the first user message there).
-		if (rosterless) {
+		if (rosterless && rosterlessProtocol) {
 			const protocol = readProtocol(protocolFile);
 			if (protocol !== null && protocol !== '') {
 				text = `工作目录记忆协议（本会话行为准则，实时加载自 ${protocolFile}）:\n\n${protocol}\n\n---\n\n${text}`;

@@ -63,6 +63,7 @@ dsh --profile headless "你的任务"
 | `protocolFile` | 包内 `MEMFLOW.md` | 协议文件路径，实时读取；部署可指向自有协议副本 |
 | `setDefault` | `true` | 安装时经 settings 服务把默认预设设为 `memflow` |
 | `memoryBootstrap` | `true` | 会话首条消息注入记忆快照（depth-0 会话） |
+| `rosterlessProtocol` | `true` | headless（无 preset 服务）会话随快照消息附带协议全文；若已把 `{{memflow_protocol}}` 接入 headless persona 则设 `false` 防双注入 |
 | `memoryPriority` | `['history','brick_index','notes','status','tasks']` | 记忆文件优先序 |
 | `memoryPerFileBytes` | `8192` | 单文件内联上限 |
 | `memoryTotalBytes` | `65536` | 快照总上限 |
