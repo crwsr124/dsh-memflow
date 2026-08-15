@@ -6,7 +6,7 @@
 
 > **MEMFLOW 记忆流模式** —— DeepSeek Harness 的记忆框架插件。
 >
-> **会话会结束，记忆不会**：感知先行、边做边记、落盘交接。
+> **会话会结束，记忆不会**：感知先行、边做边记、无缝续接。
 > **分布式记忆架构，每个项目都有自己的记忆，一个插件让你的所有工作流实现类 Hermes 效果。**
 
 [English](#english) · [协议全文](MEMFLOW.md) · [License](LICENSE)
@@ -19,7 +19,7 @@ MEMFLOW 是 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-har
 
 > 任何 AI 会话的关键状态都不应只停留在对话里——会话结束即永久丢失。
 
-因此每个工作目录（项目）都拥有自己的 `memory/` 持久记忆：会话开始时**机械加载**当前目录的记忆快照、工作中**边做边记**、结束后**落盘交接**。任何新会话只要打开同一目录，就能完整恢复现状。所有项目的记忆各自独立、互不干扰——这就是分布式记忆架构。
+因此每个工作目录（项目）都拥有自己的 `memory/` 持久记忆：会话开始时**机械加载**当前目录的记忆快照、工作中**边做边记**——该记就记：任务完成、状态变化、关键决策、踩坑经验**触发即写**，没有固定的收尾落盘流程。任何新会话只要打开同一目录，就能完整恢复现状。所有项目的记忆各自独立、互不干扰——这就是分布式记忆架构。
 
 <p align="center">
   <img src="docs/flow.png" alt="MEMFLOW 模式循环：新会话 → 感知 → 工作 → 落盘 → 新会话" width="92%">
@@ -50,7 +50,7 @@ dsh --profile headless "你的任务"
 任何目录下启动的会话都会：
 
 1. **感知先行**：会话首条消息即当前目录 `memory/` 的记忆快照（`status/tasks/notes/brick_index/history` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；
-2. **边做边记**：关键决策、状态变化、踩坑经验按协议写入对应记忆文件；
+2. **边做边记**：关键决策、状态变化、踩坑经验**触发即写**（该记就记，没有固定落盘流程）；
 3. **委派传承**：用 `delegate` 工具委派子 agent 时，`project_dir` 的记忆与 `context_files` 必读文件机械内联进 dossier，子 agent 自包含开工。
 
 ## 配置
@@ -100,7 +100,7 @@ dsh --profile headless "你的任务"
 
 **Distributed memory architecture: every project carries its own memory, one plugin for Hermes-like memory across all your workflows.**
 
-No session state should live only in the conversation — it dies with the session. With MEMFLOW, every working directory (project) owns a persistent `memory/`, mechanically loaded at session start, maintained while working, and committed when done. Any new session opening the same directory restores full context.
+No session state should live only in the conversation — it dies with the session. With MEMFLOW, every working directory (project) owns a persistent `memory/`, mechanically loaded at session start, recorded the moment it matters while working — no fixed commit step. Any new session opening the same directory restores full context.
 
 One protocol, three carriers:
 

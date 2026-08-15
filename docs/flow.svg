@@ -34,11 +34,19 @@
     <path d="M 250 249 C 250 180, 380 140, 515 146"/>
   </g>
 
+  <!-- memory write/read channels (triggered, no fixed commit step) -->
+  <g fill="none" stroke="#22D3EE" stroke-width="4" stroke-dasharray="10 10" stroke-linecap="round" marker-end="url(#arr)">
+    <path d="M 620 509 L 620 468"/>
+    <path d="M 755 380 C 800 380, 820 340, 882 298"/>
+  </g>
+  <text x="648" y="496" fill="#7DD3FC" font-size="19" font-family="PingFang SC, sans-serif">触发即写</text>
+  <text x="790" y="355" fill="#7DD3FC" font-size="19" font-family="PingFang SC, sans-serif">快照注入</text>
+
   <!-- arrow labels -->
   <text x="770" y="166" fill="#7DD3FC" font-size="19" font-family="PingFang SC, sans-serif">打开项目目录</text>
   <text x="908" y="428" fill="#94A3B8" font-size="19" font-family="PingFang SC, sans-serif">开始工作</text>
-  <text x="352" y="540" fill="#7DD3FC" font-size="19" font-family="PingFang SC, sans-serif">写入 memory/</text>
-  <text x="330" y="172" fill="#94A3B8" font-size="19" font-family="PingFang SC, sans-serif">记忆持久 · 下次会话续接</text>
+  <text x="352" y="540" fill="#94A3B8" font-size="19" font-family="PingFang SC, sans-serif">会话结束</text>
+  <text x="330" y="172" fill="#94A3B8" font-size="19" font-family="PingFang SC, sans-serif">下次会话续接</text>
 
   <!-- node cards -->
   <g font-family="PingFang SC, sans-serif">
@@ -55,12 +63,12 @@
     <!-- C: work -->
     <rect x="515" y="509" width="210" height="92" rx="16" fill="#101B33" stroke="#4D6BFE" stroke-width="2"/>
     <text x="620" y="547" text-anchor="middle" fill="#7DD3FC" font-size="23" font-weight="700">③ 工作</text>
-    <text x="620" y="581" text-anchor="middle" fill="#64748B" font-size="16">边做边记</text>
+    <text x="620" y="581" text-anchor="middle" fill="#64748B" font-size="16">边做边记 · 该记就记</text>
 
-    <!-- D: commit -->
+    <!-- D: session ends -->
     <rect x="145" y="249" width="210" height="92" rx="16" fill="#101B33" stroke="#4D6BFE" stroke-width="2"/>
-    <text x="250" y="287" text-anchor="middle" fill="#7DD3FC" font-size="23" font-weight="700">④ 落盘</text>
-    <text x="250" y="321" text-anchor="middle" fill="#64748B" font-size="16">status / history / notes…</text>
+    <text x="250" y="287" text-anchor="middle" fill="#7DD3FC" font-size="23" font-weight="700">④ 会话结束</text>
+    <text x="250" y="321" text-anchor="middle" fill="#64748B" font-size="16">对话消失 · 记忆留存</text>
   </g>
 
   <!-- center: memory folder -->

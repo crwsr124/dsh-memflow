@@ -68,7 +68,7 @@
     <!-- beat labels -->
     <g>
       <circle cx="1030" cy="300" r="34" fill="#0D1526" stroke="#4D6BFE" stroke-width="2"/>
-      <text x="1030" y="310" text-anchor="middle" fill="#7DD3FC" font-size="22" font-family="PingFang SC, sans-serif" font-weight="600">落盘</text>
+      <text x="1030" y="310" text-anchor="middle" fill="#7DD3FC" font-size="22" font-family="PingFang SC, sans-serif" font-weight="600">沉淀</text>
     </g>
     <g>
       <circle cx="1302" cy="466" r="34" fill="#0D1526" stroke="#4D6BFE" stroke-width="2"/>
@@ -84,8 +84,8 @@
       <rect x="800" y="120" width="270" height="152" rx="18" fill="#101B33" stroke="#26375F" stroke-width="1.5"/>
       <circle cx="854" cy="180" r="7" fill="#64748B"/>
       <text x="878" y="190" fill="#64748B" font-size="22" font-family="PingFang SC, sans-serif" font-weight="600">上一个会话</text>
-      <text x="842" y="238" fill="#E2E8F0" font-size="24" font-family="PingFang SC, sans-serif" font-weight="600">工作完成</text>
-      <text x="842" y="264" fill="#64748B" font-size="17" font-family="PingFang SC, sans-serif">关键状态落盘 memory/</text>
+      <text x="842" y="238" fill="#E2E8F0" font-size="24" font-family="PingFang SC, sans-serif" font-weight="600">会话结束</text>
+      <text x="842" y="264" fill="#64748B" font-size="17" font-family="PingFang SC, sans-serif">记忆留在 memory/</text>
     </g>
 
     <!-- memory folder -->
@@ -123,7 +123,7 @@
     <text x="76" y="300" fill="url(#brand)" font-size="128" font-weight="800" font-family="SF Pro Display, PingFang SC, sans-serif" letter-spacing="1">MEMFLOW</text>
     <text x="82" y="408" fill="#F1F5F9" font-size="62" font-weight="600" font-family="PingFang SC, sans-serif">记忆流模式</text>
     <text x="82" y="494" fill="#94A3B8" font-size="40" font-weight="500" font-family="PingFang SC, sans-serif">会话会结束，记忆不会</text>
-    <text x="82" y="576" fill="#64748B" font-size="30" font-family="PingFang SC, sans-serif">感知先行 · 边做边记 · 落盘交接</text>
+    <text x="82" y="576" fill="#64748B" font-size="30" font-family="PingFang SC, sans-serif">感知先行 · 边做边记 · 无缝续接</text>
     <text x="82" y="650" fill="#475569" font-size="26" font-family="PingFang SC, sans-serif">分布式记忆架构 —— 每个项目都有自己的记忆</text>
 
     <line x1="82" y1="700" x2="540" y2="700" stroke="#26375F" stroke-width="1.5"/>
