@@ -289,47 +289,52 @@ function apply(ctx, config = {}) {
 	// 1) Live protocol variable for presets (persona row: {{memflow_protocol}}).
 	ctx.systemPrompt.variable('memflow_protocol', () => readProtocol(protocolFile) ?? '');
 
-	// 1b) Mechanical memory bootstrap: a runtime-context snapshot injected once
-	// per session and FIXED afterwards (per-agent WeakMap cache). The projection
-	// then sees identical text on every later assembly, so no second snapshot is
-	// appended and no CLEARED notice is emitted — the session works from its
-	// initial memory snapshot; changes made by OTHER sessions do not rewrite it
-	// (the session itself always knows its own writes). Scope: depth-0 agents
-	// only (delegated children get their memory through the delegate dossier);
-	// when the agentPresets service exists, only sessions composed from the
-	// memflow preset; rosterless deployments (headless) load for every depth-0
-	// session. Empty result drops the context.
-	const memorySnapshots = new WeakMap();
-	ctx.effect(() => ctx.systemPrompt.context({
-		name: 'memflow:memory',
-		order: 60,
-		text: (context) => {
-			if (!memoryBootstrap) return '';
-			const agent = context.agent;
-			if (agent === void 0) return '';
-			if ((agent.session.header.delegationDepth ?? 0) > 0) return '';
-			let presets;
-			try {
-				presets = ctx.get('agentPresets');
-			} catch {
-				presets = void 0;
-			}
-			if (presets !== void 0) {
-				let joined;
-				try {
-					joined = presets.composedPreset(agent.ctx);
-				} catch {
-					joined = void 0;
-				}
-				if (joined !== PRESET_ID) return '';
-			}
-			if (memorySnapshots.has(agent)) return memorySnapshots.get(agent);
-			const cwd = agent.session.header.cwd;
-			const snapshot = cwd === void 0 ? '' : loadMemoryText(cwd, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
-			memorySnapshots.set(agent, snapshot);
-			return snapshot;
+	// 1b) Mechanical memory bootstrap: a FIXED first user message, injected once
+	// at the session's first step through the agent/pre-step waterfall (the same
+	// channel agent-instructions uses). The message joins the conversation
+	// before the user's task — perception first — and is never re-projected:
+	// later steps skip the injection, so memory edits (own or foreign) never
+	// refresh it and the dynamic runtime-context snapshot channel stays purely
+	// dynamic. Scope: depth-0 agents only (delegated children get their memory
+	// through the delegate dossier); when the agentPresets service exists, only
+	// sessions composed from the memflow preset; rosterless deployments
+	// (headless) load for every depth-0 session.
+	const memoryMessageOf = (agent) => {
+		if (!memoryBootstrap) return void 0;
+		if ((agent.session.header.delegationDepth ?? 0) > 0) return void 0;
+		let presets;
+		try {
+			presets = ctx.get('agentPresets');
+		} catch {
+			presets = void 0;
 		}
-	}), 'dsh-memflow.context()');
+		if (presets !== void 0) {
+			let joined;
+			try {
+				joined = presets.composedPreset(agent.ctx);
+			} catch {
+				joined = void 0;
+			}
+			if (joined !== PRESET_ID) return void 0;
+		}
+		const cwd = agent.session.header.cwd;
+		if (cwd === void 0) return void 0;
+		const snapshot = loadMemoryText(cwd, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
+		if (snapshot === '') return void 0;
+		return {
+			role: 'user',
+			content: [{ type: 'text', text: snapshot }],
+			source: { kind: 'plugin', plugin: 'dsh-memflow', form: 'memory-snapshot' }
+		};
+	};
+	ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+		const decision = await next();
+		if (step !== 1 || decision.kind === 'reject') return decision;
+		const message = memoryMessageOf(agent);
+		if (message === void 0) return decision;
+		if (decision.messages.some((existing) => existing.source?.plugin === 'dsh-memflow' && existing.source?.form === 'memory-snapshot')) return decision;
+		return { ...decision, messages: [message, ...decision.messages] };
+	});
 
 	// 2) Model-facing guidance for the delegate tool.
 	ctx.effect(() => ctx.systemPrompt.section({
