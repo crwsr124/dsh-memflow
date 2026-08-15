@@ -113,15 +113,64 @@ function outputValueText(values) {
 	return values.filter((value) => typeof value === 'object' && value !== null && !Array.isArray(value) && value.type === 'text' && typeof value.text === 'string').map((value) => value.text).join('');
 }
 
+const DEFAULT_MEMORY_FILES = ['status', 'tasks', 'notes', 'brick_index', 'history'];
+const DEFAULT_MEMORY_PER_FILE_BYTES = 8 * 1024;
+const DEFAULT_MEMORY_TOTAL_BYTES = 64 * 1024;
+
+/**
+ * Mechanically load a directory's memory/ files into text (the framework's
+ * perception bootstrap: status → tasks → notes → brick_index → history, with
+ * per-file and total caps; truncated files carry a path note). Returns '' when
+ * the directory has no readable memory files.
+ */
+function loadMemoryText(cwd, files, perFileBytes, totalBytes) {
+	const memoryDir = path.join(cwd, 'memory');
+	try {
+		if (!fs.statSync(memoryDir).isDirectory()) return '';
+	} catch {
+		return '';
+	}
+	const parts = [];
+	let used = 0;
+	for (const name of files) {
+		if (used >= totalBytes) {
+			parts.push('（其余记忆文件因总量上限未加载）');
+			break;
+		}
+		const file = path.join(memoryDir, `${name}.md`);
+		let stat;
+		try {
+			stat = fs.statSync(file);
+		} catch {
+			continue;
+		}
+		if (!stat.isFile()) continue;
+		let content;
+		try {
+			content = fs.readFileSync(file, 'utf8');
+		} catch {
+			continue;
+		}
+		const cap = Math.min(perFileBytes, totalBytes - used);
+		if (content.length > cap) content = content.slice(0, cap) + `\n…（文件截断，完整内容见 ${file}）`;
+		used += content.length;
+		parts.push(`=== memory/${name}.md ===\n${content}`);
+	}
+	if (parts.length === 0) return '';
+	return `工作目录记忆文件（框架机械加载自 ${memoryDir}）:\n\n` + parts.join('\n\n');
+}
+
 /**
  * Assemble the task dossier: project_dir, then each context file inlined
  * (contents up to the per-file cap; larger files are listed with their path
  * so the worker reads them itself).
  */
-function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes) {
+function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes, memoryFiles, memoryPerFileBytes, memoryTotalBytes) {
 	const parts = [`工作目录（项目根）: ${projectDir}`];
+	const memoryText = loadMemoryText(projectDir, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+	parts.push(memoryText === '' ? '默认感知（项目 memory/，机械加载）: 无（目录无 memory/ 或不可读）' : `默认感知（项目 memory/，机械加载）:\n${memoryText}`);
 	if (contextFiles.length === 0) {
-		parts.push('额外必读文件: 无（按协议默认感知工作目录下 memory/）。');
+		parts.push('额外必读文件: 无。');
 		return parts.join('\n\n');
 	}
 	parts.push('额外必读文件（由委派方指定，感知时优先）:');
@@ -218,8 +267,48 @@ function apply(ctx, config = {}) {
 	const maxDepth = config.maxDepth ?? 1;
 	if (maxDepth !== 'provider-managed' && (!Number.isSafeInteger(maxDepth) || maxDepth < 0)) throw new Error(`dsh-memflow: maxDepth must be a non-negative safe integer or 'provider-managed', got ${JSON.stringify(config.maxDepth)}`);
 
+	const memoryBootstrap = config.memoryBootstrap !== false;
+	const memoryFiles = Array.isArray(config.memoryFiles) ? config.memoryFiles : DEFAULT_MEMORY_FILES;
+	const memoryPerFileBytes = Number.isFinite(config.memoryPerFileBytes) && config.memoryPerFileBytes >= 0 ? config.memoryPerFileBytes : DEFAULT_MEMORY_PER_FILE_BYTES;
+	const memoryTotalBytes = Number.isFinite(config.memoryTotalBytes) && config.memoryTotalBytes >= 0 ? config.memoryTotalBytes : DEFAULT_MEMORY_TOTAL_BYTES;
+
 	// 1) Live protocol variable for presets (persona row: {{memflow_protocol}}).
 	ctx.systemPrompt.variable('memflow_protocol', () => readProtocol(protocolFile) ?? '');
+
+	// 1b) Mechanical memory bootstrap: a runtime-context snapshot that loads the
+	// working directory's memory/ files into model history automatically.
+	// Scope: depth-0 agents only (delegated children get their memory through
+	// the delegate dossier instead); when the agentPresets service exists, only
+	// sessions composed from the memflow preset; rosterless deployments
+	// (headless) load for every depth-0 session. Empty result drops the context.
+	ctx.effect(() => ctx.systemPrompt.context({
+		name: 'memflow:memory',
+		order: 60,
+		text: (context) => {
+			if (!memoryBootstrap) return '';
+			const agent = context.agent;
+			if (agent === void 0) return '';
+			if ((agent.session.header.delegationDepth ?? 0) > 0) return '';
+			let presets;
+			try {
+				presets = ctx.get('agentPresets');
+			} catch {
+				presets = void 0;
+			}
+			if (presets !== void 0) {
+				let joined;
+				try {
+					joined = presets.composedPreset(agent.ctx);
+				} catch {
+					joined = void 0;
+				}
+				if (joined !== PRESET_ID) return '';
+			}
+			const cwd = agent.session.header.cwd;
+			if (cwd === void 0) return '';
+			return loadMemoryText(cwd, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+		}
+	}), 'dsh-memflow.context()');
 
 	// 2) Model-facing guidance for the delegate tool.
 	ctx.effect(() => ctx.systemPrompt.section({
@@ -313,7 +402,7 @@ function apply(ctx, config = {}) {
 				if (protocol === null) throw new Error(`dsh-memflow: protocol file unreadable: ${protocolFile}`);
 				const baseDir = parent.session.header.cwd ?? process.cwd();
 				const projectDir = path.resolve(args.project_dir !== undefined && args.project_dir !== '' ? args.project_dir : baseDir);
-				const dossier = buildDossier(Array.isArray(args.context_files) ? args.context_files : [], baseDir, projectDir, maxInlineBytes);
+				const dossier = buildDossier(Array.isArray(args.context_files) ? args.context_files : [], baseDir, projectDir, maxInlineBytes, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
 				const promptText = `任务（由委派方指派）: ${args.description}\n\n${args.prompt}\n\n--- 委派上下文 dossier ---\n${dossier}\n--- dossier 结束 ---`;
 				const persona = `You are a memflow worker subagent delegated by another agent.\n\n${protocol}`;
 				const request = {
