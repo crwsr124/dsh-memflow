@@ -114,7 +114,7 @@ function outputValueText(values) {
 	return values.filter((value) => typeof value === 'object' && value !== null && !Array.isArray(value) && value.type === 'text' && typeof value.text === 'string').map((value) => value.text).join('');
 }
 
-const DEFAULT_MEMORY_PRIORITY = ['status', 'tasks', 'notes', 'brick_index', 'history'];
+const DEFAULT_MEMORY_PRIORITY = ['history', 'brick_index', 'notes', 'status', 'tasks'];
 const DEFAULT_MEMORY_PER_FILE_BYTES = 8 * 1024;
 const DEFAULT_MEMORY_TOTAL_BYTES = 64 * 1024;
 

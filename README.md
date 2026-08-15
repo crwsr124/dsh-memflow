@@ -50,7 +50,7 @@ dsh --profile headless "你的任务"
 
 任何目录下启动的会话都会：
 
-1. **感知先行**：会话首条消息即当前目录 `memory/` 的记忆快照（`status/tasks/notes/brick_index/history` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；
+1. **感知先行**：会话首条消息即当前目录 `memory/` 的记忆快照（`history/brick_index/notes/status/tasks` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；
 2. **边做边记**：关键决策、状态变化、踩坑经验**触发即写**（该记就记，没有固定落盘流程）；
 3. **委派传承**：用 `delegate` 工具委派子 agent 时，`project_dir` 的记忆与 `context_files` 必读文件机械内联进 dossier，子 agent 自包含开工。
 
@@ -63,7 +63,7 @@ dsh --profile headless "你的任务"
 | `protocolFile` | 包内 `MEMFLOW.md` | 协议文件路径，实时读取；部署可指向自有协议副本 |
 | `setDefault` | `true` | 安装时经 settings 服务把默认预设设为 `memflow` |
 | `memoryBootstrap` | `true` | 会话首条消息注入记忆快照（depth-0 会话） |
-| `memoryPriority` | `['status','tasks','notes','brick_index','history']` | 记忆文件优先序 |
+| `memoryPriority` | `['history','brick_index','notes','status','tasks']` | 记忆文件优先序 |
 | `memoryPerFileBytes` | `8192` | 单文件内联上限 |
 | `memoryTotalBytes` | `65536` | 快照总上限 |
 | `maxInlineBytes` | `32768` | delegate dossier 单文件内联上限 |
