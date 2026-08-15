@@ -50,7 +50,7 @@ dsh --profile headless "你的任务"
 
 任何目录下启动的会话都会：
 
-1. **感知先行**：会话首条消息即当前目录 `memory/` 的记忆快照（`history/brick_index/notes/status/tasks` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；
+1. **感知先行**：会话首条消息即当前目录 `memory/` 的记忆快照（`history/brick_index/notes/status/tasks` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；headless 部署的会话同时随首条消息获得**协议全文**（web 侧协议经 persona 注入）；
 2. **边做边记**：关键决策、状态变化、踩坑经验**触发即写**（该记就记，没有固定落盘流程）；
 3. **委派传承**：用 `delegate` 工具委派子 agent 时，`project_dir` 的记忆与 `context_files` 必读文件机械内联进 dossier，子 agent 自包含开工。
 
@@ -92,7 +92,7 @@ dsh --profile headless "你的任务"
 ## 实现说明
 
 - **零 `@deepseek-ai` 依赖**（有意为之）：profile 插件若携带与组合 row 重名的依赖（`dsh-tools`/`dsh-subagent` 等），会遮蔽 host row 的模块解析导致 Symbol 分裂、首次工具调用即崩。本插件全部走注入服务（`ctx.tools` / `ctx.subagents` / `ctx.get('jobs')` / `ctx.systemPrompt`），工具定义手写。
-- **感知是框架保证，不是模型自觉**：记忆快照由 `agent/pre-step` 瀑布机械注入（与 agent-instructions 同通道），协议只要求「记录义务不豁免」。
+- **感知是框架保证，不是模型自觉**：记忆快照由 `agent/pre-step` 瀑布机械注入（与 agent-instructions 同通道）；协议经两条通道之一进入上下文——web/预设会话走 persona 变量 `{{memflow_protocol}}`，headless 会话随快照消息附带全文。装上即用，任何目录都有完整记忆能力。
 - 社区项目，与 DeepSeek 官方无隶属关系。
 
 ## English

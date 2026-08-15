@@ -1,7 +1,7 @@
 /**
  * dsh-memflow — MEMFLOW memory framework for DeepSeek Harness.
  *
- * Two deliverables:
+ * Two deliverables, plus a mechanical bootstrap:
  * 1. Global prompt variable `memflow_protocol` — live-reads MEMFLOW.md on every
  *    prompt assembly (file edits take effect on the next assembly, no drift).
  *    Presets reference it as {{memflow_protocol}} in their persona row.
@@ -14,6 +14,10 @@
  *      (tool result = worker's final summary), background one-shot (job id,
  *      in-session notice on settle), continuable (durable subagent id,
  *      settlement notice + report channel + send_message follow-ups).
+ * 3. Memory bootstrap — every depth-0 session starts with the project's
+ *    memory/ snapshot injected as its first user message; in rosterless
+ *    deployments (headless, no agentPresets service) the full protocol text
+ *    rides along, since no persona references the variable there.
  *
  * 🔴 ZERO @deepseek-ai dependencies are deliberate. Out-of-tree profile
  * plugins whose dependencies are ALSO composition rows (dsh-tools,
@@ -347,7 +351,9 @@ function apply(ctx, config = {}) {
 	// dynamic. Scope: depth-0 agents only (delegated children get their memory
 	// through the delegate dossier); when the agentPresets service exists, only
 	// sessions composed from the memflow preset; rosterless deployments
-	// (headless) load for every depth-0 session.
+	// (headless) load for every depth-0 session AND carry the full protocol
+	// text — their persona never references {{memflow_protocol}}, so without
+	// this the protocol rules would be invisible to them.
 	const memoryMessageOf = (agent) => {
 		if (!memoryBootstrap) return void 0;
 		if ((agent.session.header.delegationDepth ?? 0) > 0) return void 0;
@@ -357,7 +363,8 @@ function apply(ctx, config = {}) {
 		} catch {
 			presets = void 0;
 		}
-		if (presets !== void 0) {
+		const rosterless = presets === void 0;
+		if (!rosterless) {
 			let joined;
 			try {
 				joined = presets.composedPreset(agent.ctx);
@@ -379,6 +386,17 @@ function apply(ctx, config = {}) {
 			text = state === 'missing'
 				? `工作目录记忆：${path.join(cwd, 'memory')} 目录不存在（尚未初始化）。按协议在工作开始前初始化记忆骨架（见协议「目录结构」一节）。`
 				: `工作目录记忆：${path.join(cwd, 'memory')} 目录存在但没有 .md 记忆文件。按协议初始化骨架文件（见协议「目录结构」一节）。`;
+		}
+		// Rosterless (headless) sessions: the persona does not reference the
+		// protocol variable, so attach the live protocol to this message — the
+		// plugin's core promise (every project has memory capability) holds for
+		// top-level headless runs too. Order mirrors web: rules first, snapshot
+		// after (persona precedes the first user message there).
+		if (rosterless) {
+			const protocol = readProtocol(protocolFile);
+			if (protocol !== null && protocol !== '') {
+				text = `工作目录记忆协议（本会话行为准则，实时加载自 ${protocolFile}）:\n\n${protocol}\n\n---\n\n${text}`;
+			}
 		}
 		// 🔴 消息必须带非空 id：会话持久化重载时 assertMessageEventShape
 		// 校验（官方惯例 id = crypto.randomUUID()），缺失会导致
