@@ -157,7 +157,7 @@ function loadMemoryText(cwd, files, perFileBytes, totalBytes) {
 		parts.push(`=== memory/${name}.md ===\n${content}`);
 	}
 	if (parts.length === 0) return '';
-	return `工作目录记忆文件（框架机械加载自 ${memoryDir}）:\n\n` + parts.join('\n\n');
+	return `工作目录记忆文件（固定快照，加载自 ${memoryDir}）:\n\n` + parts.join('\n\n');
 }
 
 /**
@@ -275,12 +275,17 @@ function apply(ctx, config = {}) {
 	// 1) Live protocol variable for presets (persona row: {{memflow_protocol}}).
 	ctx.systemPrompt.variable('memflow_protocol', () => readProtocol(protocolFile) ?? '');
 
-	// 1b) Mechanical memory bootstrap: a runtime-context snapshot that loads the
-	// working directory's memory/ files into model history automatically.
-	// Scope: depth-0 agents only (delegated children get their memory through
-	// the delegate dossier instead); when the agentPresets service exists, only
-	// sessions composed from the memflow preset; rosterless deployments
-	// (headless) load for every depth-0 session. Empty result drops the context.
+	// 1b) Mechanical memory bootstrap: a runtime-context snapshot injected once
+	// per session and FIXED afterwards (per-agent WeakMap cache). The projection
+	// then sees identical text on every later assembly, so no second snapshot is
+	// appended and no CLEARED notice is emitted — the session works from its
+	// initial memory snapshot; changes made by OTHER sessions do not rewrite it
+	// (the session itself always knows its own writes). Scope: depth-0 agents
+	// only (delegated children get their memory through the delegate dossier);
+	// when the agentPresets service exists, only sessions composed from the
+	// memflow preset; rosterless deployments (headless) load for every depth-0
+	// session. Empty result drops the context.
+	const memorySnapshots = new WeakMap();
 	ctx.effect(() => ctx.systemPrompt.context({
 		name: 'memflow:memory',
 		order: 60,
@@ -304,9 +309,11 @@ function apply(ctx, config = {}) {
 				}
 				if (joined !== PRESET_ID) return '';
 			}
+			if (memorySnapshots.has(agent)) return memorySnapshots.get(agent);
 			const cwd = agent.session.header.cwd;
-			if (cwd === void 0) return '';
-			return loadMemoryText(cwd, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+			const snapshot = cwd === void 0 ? '' : loadMemoryText(cwd, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+			memorySnapshots.set(agent, snapshot);
+			return snapshot;
 		}
 	}), 'dsh-memflow.context()');
 
