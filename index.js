@@ -31,6 +31,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const name = 'dsh-memflow';
@@ -321,7 +322,11 @@ function apply(ctx, config = {}) {
 		if (cwd === void 0) return void 0;
 		const snapshot = loadMemoryText(cwd, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
 		if (snapshot === '') return void 0;
+		// 🔴 消息必须带非空 id：会话持久化重载时 assertMessageEventShape
+		// 校验（官方惯例 id = crypto.randomUUID()），缺失会导致
+		// SessionPersistenceCorruptionError "lacks an identified message"。
 		return {
+			id: randomUUID(),
 			role: 'user',
 			content: [{ type: 'text', text: snapshot }],
 			source: { kind: 'plugin', plugin: 'dsh-memflow', form: 'memory-snapshot' }
