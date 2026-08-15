@@ -118,6 +118,28 @@ const DEFAULT_MEMORY_PRIORITY = ['status', 'tasks', 'notes', 'brick_index', 'his
 const DEFAULT_MEMORY_PER_FILE_BYTES = 8 * 1024;
 const DEFAULT_MEMORY_TOTAL_BYTES = 64 * 1024;
 
+/** Walk up from cwd to the first directory containing .git (project-root discovery). */
+function findProjectRoot(cwd) {
+	let dir = path.resolve(cwd);
+	for (;;) {
+		try {
+			if (fs.statSync(path.join(dir, '.git')).isDirectory()) return dir;
+		} catch {
+			/* keep walking */
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+}
+
+/** Whether a session rooted at projectRoot has memflow behaviors suppressed. */
+function isSuppressed(suppressRoots, cwd) {
+	if (suppressRoots.length === 0) return false;
+	const root = findProjectRoot(cwd);
+	return root !== null && suppressRoots.includes(root);
+}
+
 /** Classify a directory's memory/ state: missing / empty / ok (has .md files). */
 function describeMemoryDir(cwd) {
 	const memoryDir = path.join(cwd, 'memory');
@@ -301,13 +323,20 @@ function apply(ctx, config = {}) {
 	const maxDepth = config.maxDepth ?? 1;
 	if (maxDepth !== 'provider-managed' && (!Number.isSafeInteger(maxDepth) || maxDepth < 0)) throw new Error(`dsh-memflow: maxDepth must be a non-negative safe integer or 'provider-managed', got ${JSON.stringify(config.maxDepth)}`);
 
+	const suppressRoots = (Array.isArray(config.suppressRoots) ? config.suppressRoots : []).map((root) => path.resolve(root));
 	const memoryBootstrap = config.memoryBootstrap !== false;
 	const memoryPriority = Array.isArray(config.memoryPriority) ? config.memoryPriority : DEFAULT_MEMORY_PRIORITY;
 	const memoryPerFileBytes = Number.isFinite(config.memoryPerFileBytes) && config.memoryPerFileBytes >= 0 ? config.memoryPerFileBytes : DEFAULT_MEMORY_PER_FILE_BYTES;
 	const memoryTotalBytes = Number.isFinite(config.memoryTotalBytes) && config.memoryTotalBytes >= 0 ? config.memoryTotalBytes : DEFAULT_MEMORY_TOTAL_BYTES;
 
 	// 1) Live protocol variable for presets (persona row: {{memflow_protocol}}).
-	ctx.systemPrompt.variable('memflow_protocol', () => readProtocol(protocolFile) ?? '');
+	ctx.systemPrompt.variable('memflow_protocol', (context) => {
+		// 抑制目录（如 PCAgent 根，有自己的协议）不注入 memflow 协议——
+		// preset persona 只剩 harness 框定，效果等同标准模式。
+		const cwd = context.agent?.session?.header?.cwd;
+		if (cwd !== void 0 && isSuppressed(suppressRoots, cwd)) return '';
+		return readProtocol(protocolFile) ?? '';
+	});
 
 	// 1b) Mechanical memory bootstrap: a FIXED first user message, injected once
 	// at the session's first step through the agent/pre-step waterfall (the same
@@ -339,6 +368,7 @@ function apply(ctx, config = {}) {
 		}
 		const cwd = agent.session.header.cwd;
 		if (cwd === void 0) return void 0;
+		if (isSuppressed(suppressRoots, cwd)) return void 0;
 		const state = describeMemoryDir(cwd);
 		let text;
 		if (state === 'ok') {
