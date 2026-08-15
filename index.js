@@ -113,26 +113,40 @@ function outputValueText(values) {
 	return values.filter((value) => typeof value === 'object' && value !== null && !Array.isArray(value) && value.type === 'text' && typeof value.text === 'string').map((value) => value.text).join('');
 }
 
-const DEFAULT_MEMORY_FILES = ['status', 'tasks', 'notes', 'brick_index', 'history'];
+const DEFAULT_MEMORY_PRIORITY = ['status', 'tasks', 'notes', 'brick_index', 'history'];
 const DEFAULT_MEMORY_PER_FILE_BYTES = 8 * 1024;
 const DEFAULT_MEMORY_TOTAL_BYTES = 64 * 1024;
 
 /**
- * Mechanically load a directory's memory/ files into text (the framework's
- * perception bootstrap: status → tasks → notes → brick_index → history, with
- * per-file and total caps; truncated files carry a path note). Returns '' when
- * the directory has no readable memory files.
+ * Mechanically load ALL .md files in a directory's memory/ root into text:
+ * priority names first (framework order), every other .md file afterwards in
+ * alphabetical order — any directory's own memory file set is picked up
+ * without configuration. Per-file and total caps; truncated files carry a
+ * path note. Returns '' when the directory has no readable memory files.
  */
-function loadMemoryText(cwd, files, perFileBytes, totalBytes) {
+function loadMemoryText(cwd, priority, perFileBytes, totalBytes) {
 	const memoryDir = path.join(cwd, 'memory');
+	let entries;
 	try {
-		if (!fs.statSync(memoryDir).isDirectory()) return '';
+		entries = fs.readdirSync(memoryDir, { withFileTypes: true });
 	} catch {
 		return '';
 	}
+	const names = [];
+	const seen = new Set();
+	for (const name of priority) {
+		if (seen.has(name)) continue;
+		seen.add(name);
+		names.push(name);
+	}
+	const rest = entries
+		.filter((entry) => entry.isFile() && entry.name.endsWith('.md') && !seen.has(entry.name.slice(0, -3)))
+		.map((entry) => entry.name.slice(0, -3))
+		.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+	for (const name of rest) names.push(name);
 	const parts = [];
 	let used = 0;
-	for (const name of files) {
+	for (const name of names) {
 		if (used >= totalBytes) {
 			parts.push('（其余记忆文件因总量上限未加载）');
 			break;
@@ -165,9 +179,9 @@ function loadMemoryText(cwd, files, perFileBytes, totalBytes) {
  * (contents up to the per-file cap; larger files are listed with their path
  * so the worker reads them itself).
  */
-function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes, memoryFiles, memoryPerFileBytes, memoryTotalBytes) {
+function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes, memoryPriority, memoryPerFileBytes, memoryTotalBytes) {
 	const parts = [`工作目录（项目根）: ${projectDir}`];
-	const memoryText = loadMemoryText(projectDir, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+	const memoryText = loadMemoryText(projectDir, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
 	parts.push(memoryText === '' ? '默认感知（项目 memory/，机械加载）: 无（目录无 memory/ 或不可读）' : `默认感知（项目 memory/，机械加载）:\n${memoryText}`);
 	if (contextFiles.length === 0) {
 		parts.push('额外必读文件: 无。');
@@ -268,7 +282,7 @@ function apply(ctx, config = {}) {
 	if (maxDepth !== 'provider-managed' && (!Number.isSafeInteger(maxDepth) || maxDepth < 0)) throw new Error(`dsh-memflow: maxDepth must be a non-negative safe integer or 'provider-managed', got ${JSON.stringify(config.maxDepth)}`);
 
 	const memoryBootstrap = config.memoryBootstrap !== false;
-	const memoryFiles = Array.isArray(config.memoryFiles) ? config.memoryFiles : DEFAULT_MEMORY_FILES;
+	const memoryPriority = Array.isArray(config.memoryPriority) ? config.memoryPriority : DEFAULT_MEMORY_PRIORITY;
 	const memoryPerFileBytes = Number.isFinite(config.memoryPerFileBytes) && config.memoryPerFileBytes >= 0 ? config.memoryPerFileBytes : DEFAULT_MEMORY_PER_FILE_BYTES;
 	const memoryTotalBytes = Number.isFinite(config.memoryTotalBytes) && config.memoryTotalBytes >= 0 ? config.memoryTotalBytes : DEFAULT_MEMORY_TOTAL_BYTES;
 
@@ -311,7 +325,7 @@ function apply(ctx, config = {}) {
 			}
 			if (memorySnapshots.has(agent)) return memorySnapshots.get(agent);
 			const cwd = agent.session.header.cwd;
-			const snapshot = cwd === void 0 ? '' : loadMemoryText(cwd, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+			const snapshot = cwd === void 0 ? '' : loadMemoryText(cwd, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
 			memorySnapshots.set(agent, snapshot);
 			return snapshot;
 		}
@@ -409,7 +423,7 @@ function apply(ctx, config = {}) {
 				if (protocol === null) throw new Error(`dsh-memflow: protocol file unreadable: ${protocolFile}`);
 				const baseDir = parent.session.header.cwd ?? process.cwd();
 				const projectDir = path.resolve(args.project_dir !== undefined && args.project_dir !== '' ? args.project_dir : baseDir);
-				const dossier = buildDossier(Array.isArray(args.context_files) ? args.context_files : [], baseDir, projectDir, maxInlineBytes, memoryFiles, memoryPerFileBytes, memoryTotalBytes);
+				const dossier = buildDossier(Array.isArray(args.context_files) ? args.context_files : [], baseDir, projectDir, maxInlineBytes, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
 				const promptText = `任务（由委派方指派）: ${args.description}\n\n${args.prompt}\n\n--- 委派上下文 dossier ---\n${dossier}\n--- dossier 结束 ---`;
 				const persona = `You are a memflow worker subagent delegated by another agent.\n\n${protocol}`;
 				const request = {
