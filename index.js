@@ -429,7 +429,8 @@ function apply(ctx, config = {}) {
 				const baseDir = parent.session.header.cwd ?? process.cwd();
 				const projectDir = path.resolve(args.project_dir !== undefined && args.project_dir !== '' ? args.project_dir : baseDir);
 				const dossier = buildDossier(Array.isArray(args.context_files) ? args.context_files : [], baseDir, projectDir, maxInlineBytes, memoryPriority, memoryPerFileBytes, memoryTotalBytes);
-				const promptText = `任务（由委派方指派）: ${args.description}\n\n${args.prompt}\n\n--- 委派上下文 dossier ---\n${dossier}\n--- dossier 结束 ---`;
+				// 感知先行：dossier（工作目录 + 默认感知记忆 + 额外必读）在前，任务在后——与非委托模式的「记忆快照 → 用户任务」顺序一致
+				const promptText = `--- 委派上下文 dossier ---\n${dossier}\n--- dossier 结束 ---\n\n任务（由委派方指派）: ${args.description}\n\n${args.prompt}`;
 				const persona = `You are a memflow worker subagent delegated by another agent.\n\n${protocol}`;
 				const request = {
 					label: args.description,
