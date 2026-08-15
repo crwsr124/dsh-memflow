@@ -208,6 +208,7 @@ function buildDossier(contextFiles, baseDir, projectDir, maxInlineBytes, memoryP
 
 const PRESET_ID = 'memflow';
 const PRESET_NAME = '\u8bb0\u5fc6\u6d41\u6a21\u5f0f';
+const PRESET_DESCRIPTION = '\u5177\u5907\u6807\u51c6\u6a21\u5f0f\u7684\u5168\u90e8\u80fd\u529b\uff0c\u6781\u7b80\u8bb0\u5fc6\u5de5\u4f5c\u6d41\uff0c\u5206\u5e03\u5f0f\u8bb0\u5fc6\u67b6\u6784\uff0c\u8ba9\u4efb\u4f55\u5de5\u4f5c\u76ee\u5f55\u77ac\u95f4\u5177\u5907\u8bb0\u5fc6\u80fd\u529b\uff0c\u8bb0\u5fc6\u5185\u5bb9\u5b58\u50a8\u5728\u9879\u76ee\u6839\u76ee\u5f55 memory \u6587\u4ef6\u4e0b\uff0c\u540c\u65f6\u652f\u6301\u5b50 agent \u52a8\u6001\u7ec4\u5408\u8bb0\u5fc6\u4e0a\u4e0b\u6587\uff0c\u8fb9\u5de5\u4f5c\u8fb9\u8bb0\u5fc6\uff0c\u53ca\u65f6\u66f4\u65b0\u9879\u76ee\u72b6\u6001\uff0c\u540c\u65f6\u80fd\u591f\u81ea\u8fed\u4ee3\u4f18\u5316\u9879\u76ee\u4e13\u5c5e skill\u3002';
 const STANDARD_PERSONA_BLOCK = `    text: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.`;
 const MEMFLOW_PERSONA_BLOCK = `    text: |-
@@ -242,6 +243,10 @@ async function provisionPreset(ctx, config) {
 		if ((await presets.list()).some((preset) => preset.id === PRESET_ID)) return;
 		await presets.copy('standard', PRESET_ID, PRESET_NAME);
 		const created = await presets.resolve(PRESET_ID);
+		// copy() keeps the source preset's description — overwrite the metadata
+		// with the memflow identity before the roster ever lists it.
+		const metadataPath = path.join(path.dirname(created.path), 'preset.yml');
+		fs.writeFileSync(metadataPath, `name: ${PRESET_NAME}\ndescription: ${PRESET_DESCRIPTION}\norder: 2\n`);
 		let content = fs.readFileSync(created.path, 'utf8');
 		let edited = false;
 		if (content.includes(STANDARD_PERSONA_BLOCK)) {
