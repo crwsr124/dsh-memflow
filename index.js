@@ -347,17 +347,22 @@ function apply(ctx, config = {}) {
 	});
 
 	// 1b) Mechanical memory bootstrap: a FIXED first user message, injected once
-	// at the session's first step through the agent/pre-step waterfall (the same
-	// channel agent-instructions uses). The message joins the conversation
-	// before the user's task — perception first — and is never re-projected:
-	// later steps skip the injection, so memory edits (own or foreign) never
-	// refresh it and the dynamic runtime-context snapshot channel stays purely
-	// dynamic. Scope: depth-0 agents only (delegated children get their memory
-	// through the delegate dossier); when the agentPresets service exists, only
-	// sessions composed from the memflow preset; rosterless deployments
-	// (headless) load for every depth-0 session AND carry the full protocol
-	// text — their persona never references {{memflow_protocol}}, so without
-	// this the protocol rules would be invisible to them.
+	// for the entire session through the agent/pre-step waterfall (the same
+	// channel agent-instructions uses). `step` resets to 1 for every new turn,
+	// so the durable session log is the source of truth for whether bootstrap
+	// already happened. The message joins the conversation before the user's
+	// first task — perception first — and is never re-projected: later turns and
+	// memory edits (own or foreign) never refresh it. Scope: depth-0 agents only
+	// (delegated children get their memory through the delegate dossier); when
+	// the agentPresets service exists, only sessions composed from the memflow
+	// preset; rosterless deployments (headless) load for every depth-0 session
+	// AND carry the full protocol text — their persona never references
+	// {{memflow_protocol}}, so without this the protocol rules would be invisible.
+	const hasMemorySnapshot = (session) => session.events.some((event) =>
+		event?.type === 'user/message'
+			&& event.data?.source?.plugin === 'dsh-memflow'
+			&& event.data.source?.form === 'memory-snapshot'
+	);
 	const memoryMessageOf = (agent) => {
 		if (!memoryBootstrap) return void 0;
 		if ((agent.session.header.delegationDepth ?? 0) > 0) return void 0;
@@ -412,12 +417,11 @@ function apply(ctx, config = {}) {
 			source: { kind: 'plugin', plugin: 'dsh-memflow', form: 'memory-snapshot' }
 		};
 	};
-	ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+	ctx.on('agent/pre-step', async ({ agent }, next) => {
 		const decision = await next();
-		if (step !== 1 || decision.kind === 'reject') return decision;
+		if (decision.kind === 'reject' || hasMemorySnapshot(agent.session)) return decision;
 		const message = memoryMessageOf(agent);
 		if (message === void 0) return decision;
-		if (decision.messages.some((existing) => existing.source?.plugin === 'dsh-memflow' && existing.source?.form === 'memory-snapshot')) return decision;
 		return { ...decision, messages: [message, ...decision.messages] };
 	});
 

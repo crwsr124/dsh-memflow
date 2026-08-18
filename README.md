@@ -50,7 +50,7 @@ dsh --profile headless "你的任务"
 
 任何目录下启动的会话都会：
 
-1. **感知先行**：会话首条消息即当前目录 `memory/` 的记忆快照（`history/brick_index/notes/status/tasks` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；headless 部署的会话同时随首条消息获得**协议全文**（web 侧协议经 persona 注入）；
+1. **感知先行**：每个会话仅在开始前注入一次当前目录 `memory/` 的固定记忆快照（`history/brick_index/notes/status/tasks` 优先，其余 `.md` 补齐，单文件 8KB / 总量 64KB 上限，截断带路径提示）；会话中修改记忆不会触发再次注入，需要时由 agent 按路径主动读取；headless 部署的会话同时随首条消息获得**协议全文**（web 侧协议经 persona 注入）；
 2. **边做边记**：关键决策、状态变化、踩坑经验**触发即写**（该记就记，没有固定落盘流程）；
 3. **委派传承**：用 `delegate` 工具委派子 agent 时，`project_dir` 的记忆与 `context_files` 必读文件机械内联进 dossier，子 agent 自包含开工。
 
