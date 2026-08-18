@@ -280,23 +280,25 @@ async function provisionPreset(ctx, config) {
 	}
 	if (presets === void 0 || !presets.authorable) return;
 	try {
-		if ((await presets.list()).some((preset) => preset.id === PRESET_ID)) return;
-		await presets.copy('standard', PRESET_ID, PRESET_NAME);
-		const created = await presets.resolve(PRESET_ID);
-		// copy() keeps the source preset's description — overwrite the metadata
-		// with the memflow identity before the roster ever lists it.
-		const metadataPath = path.join(path.dirname(created.path), 'preset.yml');
-		fs.writeFileSync(metadataPath, `name: ${PRESET_NAME}\ndescription: ${PRESET_DESCRIPTION}\norder: 2\n`);
-		let content = fs.readFileSync(created.path, 'utf8');
-		let edited = false;
-		if (content.includes(STANDARD_PERSONA_BLOCK)) {
-			content = content.replace(STANDARD_PERSONA_BLOCK, MEMFLOW_PERSONA_BLOCK);
-			edited = true;
-		} else {
-			ctx.logger.warn(`dsh-memflow: standard persona block not found in copied preset; persona left untouched (protocol not wired)`);
+		const exists = (await presets.list()).some((preset) => preset.id === PRESET_ID);
+		if (!exists) {
+			await presets.copy('standard', PRESET_ID, PRESET_NAME);
+			const created = await presets.resolve(PRESET_ID);
+			// copy() keeps the source preset's description — overwrite the metadata
+			// with the memflow identity before the roster ever lists it.
+			const metadataPath = path.join(path.dirname(created.path), 'preset.yml');
+			fs.writeFileSync(metadataPath, `name: ${PRESET_NAME}\ndescription: ${PRESET_DESCRIPTION}\norder: 2\n`);
+			let content = fs.readFileSync(created.path, 'utf8');
+			let edited = false;
+			if (content.includes(STANDARD_PERSONA_BLOCK)) {
+				content = content.replace(STANDARD_PERSONA_BLOCK, MEMFLOW_PERSONA_BLOCK);
+				edited = true;
+			} else {
+				ctx.logger.warn(`dsh-memflow: standard persona block not found in copied preset; persona left untouched (protocol not wired)`);
+			}
+			if (edited) fs.writeFileSync(created.path, content);
+			ctx.logger.info(`dsh-memflow: provisioned preset "${PRESET_ID}" (${PRESET_NAME}) with live {{memflow_protocol}} persona`);
 		}
-		if (edited) fs.writeFileSync(created.path, content);
-		ctx.logger.info(`dsh-memflow: provisioned preset "${PRESET_ID}" (${PRESET_NAME}) with live {{memflow_protocol}} persona`);
 		if (config.setDefault !== false && presets.defaultId !== PRESET_ID) {
 			let settings;
 			try {

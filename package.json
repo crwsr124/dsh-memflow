@@ -1,6 +1,6 @@
 {
   "name": "dsh-memflow",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "MEMFLOW memory framework for DeepSeek Harness — distributed memory architecture: every project carries its own memory/, one plugin for Hermes-like memory across all your workflows",
   "type": "module",
   "main": "index.js",
