@@ -32,9 +32,9 @@ MEMFLOW 是 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-har
 |------|------|
 | `{{memflow_protocol}}` 协议变量 | 每次 prompt 组装时**实时读取** `MEMFLOW.md` 全文注入 persona——协议一改即刻生效，无副本漂移 |
 | `delegate` 工具 | 以 **prepared dossier**（项目记忆 + 必读文件机械内联）启动 MEMFLOW 协议驱动的 worker 子 agent；支持前台 / 后台 one-shot / continuable 三模式 |
-| `memflow` 预设自动供给 | 安装即自动创建「记忆流模式」preset（复制 standard、persona 挂协议变量、禁用内置子 agent 工具防递归），并默认设为当前部署的默认预设 |
+| `memflow` 预设自动供给 | 安装即自动创建可选的「记忆流模式」preset（复制 standard、persona 挂协议变量、禁用内置子 agent 工具防递归）；不改变部署原有默认预设 |
 
-**安装即激活**：`dsh plugin --profile <name> add dsh-memflow` 一条命令，bundle 自动注册、preset 自动创建，无需手工改 patch。
+**安装即激活**：`dsh plugin --profile <name> add dsh-memflow` 一条命令，bundle 自动注册、preset 自动创建，无需手工改 patch。新会话仍使用部署已有默认模式；需要记忆流时在新建会话时选择「记忆流模式」。
 
 ## 快速开始
 
@@ -43,7 +43,7 @@ MEMFLOW 是 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-har
 dsh plugin --profile web add github:crwsr124/dsh-memflow
 dsh plugin --profile headless add github:crwsr124/dsh-memflow
 
-# 新建会话 → 选择「记忆流模式」预设（插件默认已设为默认预设）
+# 新建会话 → 按需选择「记忆流模式」预设
 # 或 headless 直接跑：
 dsh --profile headless "你的任务"
 ```
@@ -61,7 +61,7 @@ dsh --profile headless "你的任务"
 | 键 | 默认 | 说明 |
 |----|------|------|
 | `protocolFile` | 包内 `MEMFLOW.md` | 协议文件路径，实时读取；部署可指向自有协议副本 |
-| `setDefault` | `true` | 安装时创建 `memflow` preset，并经 settings 服务设为默认；preset 已存在时也会补设默认，不覆盖其内容 |
+| `setDefault` | `false` | 安装时创建 `memflow` preset，但不改变已有默认；仅显式设为 `true` 时才经 settings 服务将它设为默认 |
 | `memoryBootstrap` | `true` | 会话首条消息注入记忆快照（depth-0 会话） |
 | `rosterlessProtocol` | `true` | headless（无 preset 服务）会话随快照消息附带协议全文；若已把 `{{memflow_protocol}}` 接入 headless persona 则设 `false` 防双注入 |
 | `memoryPriority` | `['history','brick_index','notes','status','tasks']` | 记忆文件优先序 |
@@ -108,7 +108,7 @@ One protocol, three carriers:
 
 - `{{memflow_protocol}}` — a live prompt variable that re-reads `MEMFLOW.md` on every assembly;
 - `delegate` — a tool that spawns protocol-driven worker subagents with prepared context dossiers (project memory + required files inlined; foreground / background one-shot / continuable modes);
-- the `memflow` preset — auto-provisioned on install (copied from `standard`, persona wired to the protocol variable), made the default.
+- the `memflow` preset — auto-provisioned on install (copied from `standard`, persona wired to the protocol variable) without changing the existing default; set `setDefault: true` only when that default is explicitly desired.
 
 Install:
 

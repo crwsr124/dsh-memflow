@@ -264,11 +264,10 @@ const MEMFLOW_PERSONA_BLOCK = `    text: |-
  * warning instead of a boot failure. Runs only where the agentPresets service
  * is mounted (web); headless deployments skip it silently.
  *
- * With `setDefault` (default true) the plugin also writes the default preset
- * through the settings service (namespace "agent-presets", {default}), so one
- * `dsh plugin add` both provisions the preset and makes it the deployment
- * default; set `setDefault: false` in the row config to keep the deployment
- * default untouched. The write is idempotent (skipped when the default
+ * With `setDefault: true` the plugin also writes the default preset through
+ * the settings service (namespace "agent-presets", {default}). The default is
+ * false: installing a memory capability must not replace the deployment's
+ * chosen default preset. The write is idempotent (skipped when the default
  * already names this preset).
  */
 async function provisionPreset(ctx, config) {
@@ -299,7 +298,7 @@ async function provisionPreset(ctx, config) {
 			if (edited) fs.writeFileSync(created.path, content);
 			ctx.logger.info(`dsh-memflow: provisioned preset "${PRESET_ID}" (${PRESET_NAME}) with live {{memflow_protocol}} persona`);
 		}
-		if (config.setDefault !== false && presets.defaultId !== PRESET_ID) {
+		if (config.setDefault === true && presets.defaultId !== PRESET_ID) {
 			let settings;
 			try {
 				settings = ctx.get('settings');
