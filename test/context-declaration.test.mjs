@@ -235,7 +235,35 @@ try {
 	assert.equal(delegated.messages.length, 2, 'a delegated child still gets its directory perception');
 	assert.match(delegated.messages[0].content[0].text, /BROWSER_STATUS/, 'and it is the cwd declaration that supplies it');
 
-	/* ---------- 12. suppressRoots opts a tree out entirely ---------- */
+	/* ---------- 12. dispatch preload vs systemPrompt on an UNDECLARED directory ----------
+	 * The legacy memory/ perception is a FALLBACK BRANCH, not an entry in the
+	 * preload list: it runs only while the effective preload list is empty
+	 * (`if (plan.preload.length > 0) { ...preload... }` returns first). So a
+	 * dispatcher that injects a shared file through DSH_CONTEXT_PRELOAD
+	 * replaces the directory's memory perception instead of adding to it —
+	 * undeclared projects silently lose their own memory/. Deployments that
+	 * inject a shared index into arbitrary directories must therefore use
+	 * DSH_CONTEXT_SYSTEM_PROMPT.
+	 */
+	writeBare('legacy-with-injection/memory/notes.md', 'LEGACY_NOTES');
+	const injectedIndex = write('dispatch/INDEX.md', 'INJECTED_INDEX');
+
+	const preloadInjected = createHarness({}, { DSH_CONTEXT_PRELOAD: injectedIndex });
+	const preloadBootstrap = await preloadInjected.bootstrap(createSession(path.join(bare, 'legacy-with-injection')));
+	const preloadText = preloadBootstrap.messages[0].content[0].text;
+	assert.match(preloadText, /INJECTED_INDEX/, 'the injected preload file is perceived');
+	assert.doesNotMatch(preloadText, /LEGACY_NOTES/, 'and it suppresses the legacy memory/ fallback');
+
+	const promptInjected = createHarness({}, { DSH_CONTEXT_SYSTEM_PROMPT: injectedIndex });
+	const promptBootstrap = await promptInjected.bootstrap(createSession(path.join(bare, 'legacy-with-injection')));
+	assert.match(promptBootstrap.messages[0].content[0].text, /LEGACY_NOTES/, 'system-prompt injection keeps the memory/ fallback');
+	assert.match(
+		promptInjected.sections(path.join(bare, 'legacy-with-injection')).map((section) => section.text).join('\n'),
+		/INJECTED_INDEX/,
+		'and the injected file still lands as a prompt section',
+	);
+
+	/* ---------- 13. suppressRoots opts a tree out entirely ---------- */
 	const suppressed = createHarness({ suppressRoots: [root] });
 	assert.equal(suppressed.sections(browserDir).length, 0, 'suppressed tree renders no sections');
 
