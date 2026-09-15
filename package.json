@@ -1,0 +1,42 @@
+{
+  "name": "dsh-memflow",
+  "version": "0.3.0",
+  "description": "Per-directory context composition for DeepSeek Harness — .dsh/context.yaml declares systemPrompt + preload for every agent loop; memory is a baseline, not a preset",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./MEMFLOW.md": "./MEMFLOW.md"
+  },
+  "files": [
+    "index.js",
+    "MEMFLOW.md",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crwsr124/dsh-memflow.git"
+  },
+  "homepage": "https://github.com/crwsr124/dsh-memflow#readme",
+  "bugs": {
+    "url": "https://github.com/crwsr124/dsh-memflow/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "memory",
+    "memflow",
+    "context",
+    "agent",
+    "subagent",
+    "dsh-plugin"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

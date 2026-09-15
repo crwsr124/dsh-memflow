@@ -1,0 +1,40 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4D6BFE"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A0F1E"/>
+      <stop offset="1" stop-color="#0E1830"/>
+    </linearGradient>
+    <filter id="halo" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="url(#bg)"/>
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="none" stroke="#26375F" stroke-width="2"/>
+
+  <!-- folder -->
+  <g>
+    <path d="M 208 218 h 30 a 10 10 0 0 1 10 10 v 8 h -40 z" fill="url(#brand)"/>
+    <rect x="208" y="236" width="96" height="70" rx="12" fill="#121C36" stroke="#4D6BFE" stroke-width="2.5"/>
+    <text x="256" y="278" text-anchor="middle" fill="url(#brand)" font-size="24" font-family="SF Pro Display, sans-serif" font-weight="800">memory/</text>
+  </g>
+
+  <!-- flowing stream out of the folder -->
+  <path d="M 256 312 C 190 342, 130 318, 118 372 C 106 428, 196 430, 248 402 C 302 374, 352 404, 384 362"
+        fill="none" stroke="url(#brand)" stroke-width="26" stroke-linecap="round" opacity="0.28" filter="url(#halo)"/>
+  <path d="M 256 312 C 190 342, 130 318, 118 372 C 106 428, 196 430, 248 402 C 302 374, 352 404, 384 362"
+        fill="none" stroke="url(#brand)" stroke-width="13" stroke-linecap="round" filter="url(#halo)"/>
+
+  <!-- memory dots riding the stream -->
+  <circle cx="168" cy="354" r="9" fill="#22D3EE"/>
+  <circle cx="240" cy="410" r="9" fill="#7DD3FC"/>
+  <circle cx="338" cy="376" r="9" fill="#22D3EE"/>
+</svg>
