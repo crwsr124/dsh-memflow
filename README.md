@@ -37,6 +37,28 @@ inherit: false           # 缺省；置 true 才向上合并祖先目录的声�
 
 未声明的目录仍按 0.2.x 行为加载 `memory/` 目录（legacy fallback），存量项目无需改动。声明存在时以声明为准。
 
+## 声明路径变量（0.4.0）
+
+声明被 git 托管、跨设备共享时，设备各自的记忆文件没法用一条静态路径写死。0.4.0 起声明路径支持两个内置变量：
+
+```yaml
+# <工作目录>/.dsh/context.yaml
+preload:
+  - memory/${device}/status.md    # 每台设备各自的分区记忆
+```
+
+| 变量 | 解析值 |
+|------|--------|
+| `${device}` | 从**声明所在目录**（`.dsh` 的上级）起向上逐级查找 `.device` 文件（上限 64 级），取首个命中文件的**第一个非空行、trim 后**的值；找不到或内容为空则回退到主机名去掉尾部 `.local` |
+| `${hostname}` | 主机名去掉尾部 `.local` |
+
+解析顺序与规则：
+
+- 替换发生在 `resolveFrom` 这个唯一咽喉点，对 `systemPrompt` 与 `preload`、声明来源与 `DSH_CONTEXT_*`/config 来源的 extra 路径**统一生效**（extra 路径以会话工作目录为基准向上找 `.device`）。
+- **每次组装都重新求值，不做缓存**——与「声明文件每回合重读」的既有哲学一致；`.device` 是一行小文件，读取代价可忽略。
+- **未知的 `${...}` 保持字面量**：不删除、不报错，下游读取时自然产生「无法读取」注记，响亮暴露拼写错误。
+- 不支持 env 变量替换、glob、转义，也不引入通用 `var*` 键——声明格式保持极小面。变量在**路径**上替换；文件**内容**不做任何替换。
+
 ## 一个协议、两个载具
 
 | 载具 | 作用 |
@@ -144,6 +166,15 @@ systemPrompt: [AGENT.md]          # identity → ordered prompt sections, re-rea
 preload: [memory/status.md]       # perception → ONE fixed first user message, once per session
 inherit: false                    # default: do not merge ancestors; set true to opt in
 ```
+
+**0.4.0 adds declared-path variables** for git-shared, multi-device declarations:
+
+```yaml
+preload:
+  - memory/${device}/status.md
+```
+
+`${device}` walks up from the declaring directory to the first `.device` file (≤64 levels) and takes its first non-empty line, trimmed; missing or empty, it falls back to the host name minus the `.local` suffix. `${hostname}` is always that short host name. Unknown `${...}` stays literal and surfaces as an unreadable-path note downstream. Substitution happens in `resolveFrom` — the single choke point for declared and env/config-supplied paths alike — and is re-evaluated on every assembly (no cache). No env expansion, no glob, no escaping.
 
 A dispatcher refines a single run through the child's environment — the only channel that survives a process boundary, since an out-of-process provider may not push `persona`:
 

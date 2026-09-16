@@ -1,6 +1,6 @@
 {
   "name": "dsh-memflow",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Per-directory context composition for DeepSeek Harness — .dsh/context.yaml declares systemPrompt + preload for every agent loop; memory is a baseline, not a preset",
   "type": "module",
   "main": "index.js",

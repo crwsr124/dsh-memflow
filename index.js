@@ -7,6 +7,23 @@
  * any session opened in that directory gets that composition mechanically — in
  * every deployment (web, headless, ACP child), with no roster involved.
  *
+ * 0.4.0 adds path variables for git-shared declarations. A declaration checked
+ * into a multi-device repository can point at per-device files:
+ *
+ *   preload:
+ *     - memory/${device}/status.md
+ *
+ * `${device}` walks UP from the declaring directory to the first `.device`
+ * file (bounded like MAX_WALK_UP) and takes its first non-empty line,
+ * trimmed; with no `.device` (or an empty one) it falls back to the host
+ * name minus the `.local` suffix. `${hostname}` is always that short host
+ * name. Unknown `${...}` references stay LITERAL — the downstream read then
+ * reports the path as unreadable, which exposes the mistake loudly instead
+ * of silently rewriting it. Substitution lives inside resolveFrom, the one
+ * choke point for declared and env/config-supplied paths alike, and is
+ * evaluated on EVERY assembly (no cache) — matching the premise that
+ * declarations are re-read each turn; `.device` is a one-line file.
+ *
  * Declaration lives in `<dir>/.dsh/context.yaml`:
  *
  *   systemPrompt:            # identity / protocol — injected as prompt sections
@@ -71,6 +88,7 @@
  * re-scanned, but section text is interpolated once — file content is not.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -237,9 +255,67 @@ function truncateUtf8(text, maxBytes) {
 	return text.slice(0, end);
 }
 
-/** Resolve a declared path against the declaring directory. */
+/** The host name without a trailing `.local` (macOS zeroconf suffix). */
+function shortHostname() {
+	try {
+		return os.hostname().replace(/\.local\.?$/i, '');
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Walk up from `startDir` to the FIRST `.device` file and return its first
+ * non-empty line, trimmed. An existing-but-empty `.device` is the hit: it
+ * yields undefined, which sends `${device}` to the host-name fallback. The
+ * bound matches MAX_WALK_UP — a declaration living deeper than that could not
+ * be discovered either.
+ */
+function readDeviceName(startDir) {
+	let dir = path.resolve(startDir);
+	for (let depth = 0; depth < MAX_WALK_UP; depth += 1) {
+		let content;
+		try {
+			content = fs.readFileSync(path.join(dir, '.device'), 'utf8');
+		} catch {
+			const parent = path.dirname(dir);
+			if (parent === dir) return undefined;
+			dir = parent;
+			continue;
+		}
+		const line = content.split(/\r?\n/).find((entry) => entry.trim() !== '');
+		return line === undefined ? undefined : line.trim();
+	}
+	return undefined;
+}
+
+/**
+ * Expand the two built-in path variables in a declared path. `baseDir` is the
+ * declaring directory: which device this is belongs to where the declaration
+ * lives, not to the session's cwd. Unknown `${...}` references stay literal —
+ * no env expansion, no glob, no escaping; the declaration format stays a
+ * deliberately small surface, and a typo surfaces as an unreadable path.
+ */
+function expandDeclaredPath(file, baseDir) {
+	if (!file.includes('${')) return file;
+	const hostname = shortHostname();
+	return file.replace(/\$\{([^}]*)\}/g, (reference, name) => {
+		if (name === 'device') return readDeviceName(baseDir) ?? hostname;
+		if (name === 'hostname') return hostname;
+		return reference;
+	});
+}
+
+/**
+ * Resolve a declared path against the declaring directory, expanding the
+ * built-in path variables (see expandDeclaredPath). Absolute paths expand
+ * too, so a pinned tree can still carry one per-device segment. Evaluated on
+ * EVERY resolution — declarations are re-read each turn, and `.device` is a
+ * one-line file; caching here would be the plugin's only stale state.
+ */
 function resolveFrom(baseDir, file) {
-	return path.isAbsolute(file) ? file : path.resolve(baseDir, file);
+	const expanded = expandDeclaredPath(file, baseDir);
+	return path.isAbsolute(expanded) ? expanded : path.resolve(baseDir, expanded);
 }
 
 /**
