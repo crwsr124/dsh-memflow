@@ -128,7 +128,14 @@ try {
 	const browserDecision = await browser.bootstrap(browserSession);
 	const browserText = browserDecision.messages[0].content[0].text;
 	assert.match(browserText, /BROWSER_STATUS/, 'preload file is injected as first user message');
-	assert.match(browserText, /完整固定快照/);
+	assert.equal(browserText, `工作目录前置上下文:\n\n=== ${path.join(browserDir, 'memory/status.md')} ===\nBROWSER_STATUS`);
+	assert.equal(browserDecision.messages[0].source.form, 'context-preload');
+
+	// The short heading applies to capped declarations too; file-level warnings remain.
+	const limited = await createHarness({ perFileBytes: 4 }).bootstrap(createSession(browserDir));
+	assert.equal(limited.messages[0].content[0].text.split('\n')[0], '工作目录前置上下文:');
+	assert.match(limited.messages[0].content[0].text, /文件截断/);
+	assert.equal(browserText.split('\n\n')[1].split('\n')[0], limited.messages[0].content[0].text.split('\n\n')[1].split('\n')[0], 'file list unchanged by the heading or limits');
 	assert.equal(browserDecision.messages.length, 2, 'bootstrap message precedes the task');
 
 	/* ---------- 2. injected once per session, never re-projected ---------- */
@@ -136,8 +143,15 @@ try {
 		type: 'user/message',
 		data: { source: { plugin: 'dsh-memflow', form: 'memory-snapshot' } },
 	});
+	write('agents/browser/memory/status.md', 'UPDATED_STATUS');
 	const repeat = await browser.bootstrap(browserSession);
 	assert.equal(repeat.messages.length, 1, 'second turn does not re-inject perception');
+	assert.match(browserText, /BROWSER_STATUS/, 'existing snapshot remains unchanged after a file edit');
+	const fresh = await browser.bootstrap(createSession(browserDir));
+	assert.match(fresh.messages[0].content[0].text, /UPDATED_STATUS/, 'new session reads current files');
+	browserSession.snapshotEvents()[0].data.source.form = 'context-preload';
+	assert.equal((await browser.bootstrap(browserSession)).messages.length, 1, 'current source marker also prevents re-injection');
+	write('agents/browser/memory/status.md', 'BROWSER_STATUS');
 
 	/* ---------- 3. inheritance: subdirectory refines its ancestor ---------- */
 	write('COORDINATOR.md', 'ROOT_PROTOCOL');

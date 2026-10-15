@@ -549,18 +549,15 @@ function apply(ctx, config = {}) {
 		if (plan.preload.length > 0) {
 			const parts = [];
 			let used = 0;
-			let complete = true;
 			for (const abs of plan.preload) {
 				const loaded = readForInjection(abs, perFileBytes, totalBytes - used);
-				if (!loaded.complete) complete = false;
 				used += loaded.bytes;
 				parts.push(`=== ${abs} ===\n${loaded.text}`);
 			}
-			const state = complete ? '完整固定快照' : '受限固定快照（未完整加载的文件须按提示路径手动读取）';
 			return {
 				id: randomUUID(),
 				role: 'user',
-				content: [{ type: 'text', text: `工作目录前置上下文（${state}，按 ${fileName} 声明加载）:\n\n${parts.join('\n\n')}` }],
+				content: [{ type: 'text', text: `工作目录前置上下文:\n\n${parts.join('\n\n')}` }],
 				source: { kind: 'plugin', plugin: name, form: 'context-preload' },
 			};
 		}
