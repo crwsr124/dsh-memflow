@@ -14,13 +14,13 @@ function harness(config={}) {
 const text=async(h=harness())=>(await h.run()).messages[0]?.content[0].text ?? '';
 try {
  write('.device',`device_name: TEST\npcagent_root: '${root}'`);
- write('a/profile.md','ALPHA_CAPABILITY'); write('b/profile.md','BETA_CAPABILITY');
- write('a/.dsh/context.yaml','preload: [DO_NOT_READ_TARGET]\nagents: [recursive/profile.md]');
+ write('a/.dsh/profile.md','ALPHA_CAPABILITY'); write('b/.dsh/profile.md','BETA_CAPABILITY');
+ write('a/.dsh/context.yaml','preload: [DO_NOT_READ_TARGET]\nagents: [recursive/.dsh/profile.md]');
  write('a/memory/status.md','DO_NOT_READ_MEMORY');
- write('.dsh/context.yaml','agents:\n  - ${pcagent_root}/a/profile.md\n  - b/profile.md');
- write('child/.dsh/context.yaml','inherit: true\nagents: [../a/./profile.md, ../c/profile.md]\npreload: [status.md]');
- write('c/profile.md','GAMMA_CAPABILITY'); write('child/status.md','ORDINARY_PRELOAD');
- fs.symlinkSync(path.join(root,'a/profile.md'),path.join(root,'alias.md'));
+ write('.dsh/context.yaml','agents:\n  - ${pcagent_root}/a/.dsh/profile.md\n  - b/.dsh/profile.md');
+ write('child/.dsh/context.yaml','inherit: true\nagents: [../a/./.dsh/profile.md, ../c/.dsh/profile.md]\npreload: [status.md]');
+ write('c/.dsh/profile.md','GAMMA_CAPABILITY'); write('child/status.md','ORDINARY_PRELOAD');
+ fs.symlinkSync(path.join(root,'a'),path.join(root,'alias'));
  let output=await text();
  assert.ok(output.indexOf('ALPHA_CAPABILITY')<output.indexOf('BETA_CAPABILITY'));
  assert.ok(output.indexOf('BETA_CAPABILITY')<output.indexOf('GAMMA_CAPABILITY'));
@@ -30,25 +30,30 @@ try {
  assert.ok(output.includes(`cwd: ${fs.realpathSync(path.join(root,'a'))}`));
  assert.doesNotMatch(output,/DO_NOT_READ|recursive/);
  assert.equal(harness().sections(),'','profiles never enter system prompt');
- write('child/.dsh/context.yaml','inherit: true\nagents: [../alias.md]');
+ write('child/.dsh/context.yaml','inherit: true\nagents: [../alias/.dsh/profile.md]');
  assert.equal((await text()).match(/ALPHA_CAPABILITY/g).length,1,'symlink dedup');
  const h=harness(); const initial=await h.run(); const source=initial.messages[0].source;
  assert.equal(source.form,'context-preload'); assert.ok(initial.messages[0].id);
- write('a/profile.md','UPDATED_CAPABILITY');
+ write('a/.dsh/profile.md','UPDATED_CAPABILITY');
  assert.equal((await h.run([{type:'user/message',data:{source}}])).messages.length,0,'resume keeps original snapshot');
  assert.match(await text(h),/UPDATED_CAPABILITY/,'fresh sees edited profile');
  for(const form of ['context-preload','memory-snapshot']) assert.equal((await h.run([{type:'user/message',data:{source:{plugin:'dsh-memflow',form}}}])).messages.length,0);
  assert.equal((await h.run([],'reject')).messages.length,0);
- write('empty/profile.md','  \n');
- for(const [value,expected] of [['[]',/必须为非空/],['profile.md',/必须为非空/],['[null, true, 123, ""]',/agents\[0\].*非空/],['[../missing/profile.md]',/无法读取/],['[../empty/profile.md]',/profile 为空/],['[../empty]',/不是文件/],['[${typo}/profile.md]',/Unknown path variable/]]) {
+ write('empty/.dsh/profile.md','  \n');
+ for(const [value,expected] of [['[]',/必须为非空/],['profile.md',/必须为非空/],['[null, true, 123, ""]',/agents\[0\].*非空/],['[../missing/.dsh/profile.md]',/无法读取/],['[../empty/.dsh/profile.md]',/profile 为空/],['[../empty]',/路径必须/],['[../a/profile.md]',/路径必须/],['[../alias.md]',/路径必须/],['[${typo}/.dsh/profile.md]',/Unknown path variable/]]) {
   write('child/.dsh/context.yaml',`agents: ${value}`);
   assert.match(await text(),expected,value);
  }
  write('child/.dsh/context.yaml','agents:\n  -\n  - false'); assert.match(await text(),/agents\[0\]/);
- write('a/.dsh/profile.md','HIDDEN_PROFILE');
+ write('arbitrary.md','INVALID_ALIAS_TARGET');
+ fs.mkdirSync(path.join(root,'badalias/.dsh'),{recursive:true});
+ fs.symlinkSync(path.join(root,'arbitrary.md'),path.join(root,'badalias/.dsh/profile.md'));
+ write('child/.dsh/context.yaml','agents: [../badalias/.dsh/profile.md]');
+ assert.match(await text(),/路径必须/,'real target must also be a .dsh/profile.md');
+ fs.mkdirSync(path.join(root,'directory/.dsh/profile.md'),{recursive:true});
+ write('child/.dsh/context.yaml','agents: [../directory/.dsh/profile.md]');
+ assert.match(await text(),/不是文件/);
  write('child/.dsh/context.yaml','agents: [../a/.dsh/profile.md]');
- assert.ok((await text()).includes(`cwd: ${fs.realpathSync(path.join(root,'a'))}`), '.dsh/profile.md derives owning directory, not .dsh');
- write('child/.dsh/context.yaml','agents: [../a/profile.md]');
  assert.doesNotMatch(await text(),/BETA_CAPABILITY/,'inherit false isolates ancestor');
  assert.match(await text(harness({perFileBytes:3})),/文件截断/);
  assert.match(await text(harness({totalBytes:0})),/总量上限/);

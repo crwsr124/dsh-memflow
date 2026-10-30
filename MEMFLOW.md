@@ -88,7 +88,7 @@ preload:
 - `${device_name}` / `${pcagent_root}`：从声明所在目录向上找最近 `.device`（上限 64 级），只接受 YAML 两必填字符串 `device_name`（合法单目录名）和 `pcagent_root`（本机可访问的绝对目录）。不兼容单行格式和旧变量，不作主机名兜底。
 - `${hostname}`：主机名去掉尾部 `.local`，不依赖设备声明。
 - 未知变量、缺失/非法设备声明显式诊断，不静默吞掉。
-- `agents: [path/to/profile.md]` 直接读取简短能力 profile，在普通 preload 前合成含来源和父目录 cwd 的协作目录；按继承祖先→子、列表顺序规范路径去重，不递归目标声明、不生成实体索引。它属于同一固定 bootstrap 快照，后续编辑不自动刷新旧会话。
+- `agents: [path/to/.dsh/profile.md]` 只接受此文件形态（含真实路径目标），直接读取简短能力 profile，在普通 preload 前合成含来源和所属目录 cwd 的协作目录；按继承祖先→子、列表顺序规范路径去重，不递归目标声明、不生成实体索引。它属于同一固定 bootstrap 快照，后续编辑不自动刷新旧会话。
 - 每次组装实时求值、不缓存；仅替换声明里的**路径**，不替换文件内容。目录结构与文件格式（本节其余部分）对分区目录同样适用：`memory/${device_name}/` 下的 `tasks.md` / `status.md` / `history.md` / `notes.md` 沿用下文各节格式。
 
 ---
