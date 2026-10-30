@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const { apply } = await import(process.env.MEMFLOW_TEST_MODULE ?? '../index.js');
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'memflow-agents-'));
+const write=(name,text)=>{const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text);return file;};
+const cwd=path.join(root,'child');
+function harness(config={}) {
+ let hook; const sections=[];
+ apply({systemPrompt:{section(s){sections.push(s);return ()=>{};}},effect(f){return f();},on(_,f){hook=f;},logger:{info(){},warn(){}}},{allowEnvOverride:false,...config});
+ return {sections:()=>sections.map(s=>typeof s.text==='function'?s.text({agent:{session:{header:{cwd}}}}):s.text).join(''),run:async(events=[],kind='accept')=>hook({agent:{session:{header:{cwd},snapshotEvents(){return events;}}}},async()=>({kind,messages:[]}))};
+}
+const text=async(h=harness())=>(await h.run()).messages[0]?.content[0].text ?? '';
+try {
+ write('.device',`device_name: TEST\npcagent_root: '${root}'`);
+ write('a/profile.md','ALPHA_CAPABILITY'); write('b/profile.md','BETA_CAPABILITY');
+ write('a/.dsh/context.yaml','preload: [DO_NOT_READ_TARGET]\nagents: [recursive/profile.md]');
+ write('a/memory/status.md','DO_NOT_READ_MEMORY');
+ write('.dsh/context.yaml','agents:\n  - ${pcagent_root}/a/profile.md\n  - b/profile.md');
+ write('child/.dsh/context.yaml','inherit: true\nagents: [../a/./profile.md, ../c/profile.md]\npreload: [status.md]');
+ write('c/profile.md','GAMMA_CAPABILITY'); write('child/status.md','ORDINARY_PRELOAD');
+ fs.symlinkSync(path.join(root,'a/profile.md'),path.join(root,'alias.md'));
+ let output=await text();
+ assert.ok(output.indexOf('ALPHA_CAPABILITY')<output.indexOf('BETA_CAPABILITY'));
+ assert.ok(output.indexOf('BETA_CAPABILITY')<output.indexOf('GAMMA_CAPABILITY'));
+ assert.ok(output.indexOf('GAMMA_CAPABILITY')<output.indexOf('ORDINARY_PRELOAD'));
+ assert.equal(output.match(/ALPHA_CAPABILITY/g).length,1);
+ assert.match(output,/来源声明: .*context.yaml/);
+ assert.ok(output.includes(`cwd: ${fs.realpathSync(path.join(root,'a'))}`));
+ assert.doesNotMatch(output,/DO_NOT_READ|recursive/);
+ assert.equal(harness().sections(),'','profiles never enter system prompt');
+ write('child/.dsh/context.yaml','inherit: true\nagents: [../alias.md]');
+ assert.equal((await text()).match(/ALPHA_CAPABILITY/g).length,1,'symlink dedup');
+ const h=harness(); const initial=await h.run(); const source=initial.messages[0].source;
+ assert.equal(source.form,'context-preload'); assert.ok(initial.messages[0].id);
+ write('a/profile.md','UPDATED_CAPABILITY');
+ assert.equal((await h.run([{type:'user/message',data:{source}}])).messages.length,0,'resume keeps original snapshot');
+ assert.match(await text(h),/UPDATED_CAPABILITY/,'fresh sees edited profile');
+ for(const form of ['context-preload','memory-snapshot']) assert.equal((await h.run([{type:'user/message',data:{source:{plugin:'dsh-memflow',form}}}])).messages.length,0);
+ assert.equal((await h.run([],'reject')).messages.length,0);
+ write('empty/profile.md','  \n');
+ for(const [value,expected] of [['[]',/必须为非空/],['profile.md',/必须为非空/],['[null, true, 123, ""]',/agents\[0\].*非空/],['[../missing/profile.md]',/无法读取/],['[../empty/profile.md]',/profile 为空/],['[../empty]',/不是文件/],['[${typo}/profile.md]',/Unknown path variable/]]) {
+  write('child/.dsh/context.yaml',`agents: ${value}`);
+  assert.match(await text(),expected,value);
+ }
+ write('child/.dsh/context.yaml','agents:\n  -\n  - false'); assert.match(await text(),/agents\[0\]/);
+ write('a/.dsh/profile.md','HIDDEN_PROFILE');
+ write('child/.dsh/context.yaml','agents: [../a/.dsh/profile.md]');
+ assert.ok((await text()).includes(`cwd: ${fs.realpathSync(path.join(root,'a'))}`), '.dsh/profile.md derives owning directory, not .dsh');
+ write('child/.dsh/context.yaml','agents: [../a/profile.md]');
+ assert.doesNotMatch(await text(),/BETA_CAPABILITY/,'inherit false isolates ancestor');
+ assert.match(await text(harness({perFileBytes:3})),/文件截断/);
+ assert.match(await text(harness({totalBytes:0})),/总量上限/);
+ // The ACP clean/normal patch sets ignoreDeclaration and allowEnvOverride false.
+ // Instrument actual reads to prove no declaration, device, or profile is read.
+ for (const mode of ['clean','normal']) {
+  const reads=[]; const original=fs.readFileSync;
+  fs.readFileSync=(file,...args)=>{reads.push(String(file));return original(file,...args);};
+  try { const isolated=harness({ignoreDeclaration:true,legacyMemoryFallback:false}); assert.equal(isolated.sections(),''); assert.equal(await text(isolated),''); assert.deepEqual(reads,[],mode); }
+  finally {fs.readFileSync=original;}
+ }
+ assert.equal(await text(harness({memoryBootstrap:false})), '');
+ console.log('agents catalog inheritance/order/dedup/diagnostics/snapshot/isolation tests passed');
+} finally {fs.rmSync(root,{recursive:true,force:true});}

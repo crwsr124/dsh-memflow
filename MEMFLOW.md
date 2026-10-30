@@ -74,21 +74,22 @@
 
 初始化骨架时：创建 `memory/` 及上述文件（`tasks.md`、`status.md`、`history.md`、`notes.md`、`brick_index.md` 可先留空，`bricks/` 建空目录），再开始工作。
 
-### 3.1 设备分区记忆（跨机共享声明，0.4.0）
+### 3.1 设备分区记忆（跨机共享声明，0.5.0）
 
 声明随 git 跨设备共享、而记忆按设备分区时，用路径变量代替写死的设备名：
 
 ```yaml
 # <项目根目录>/.dsh/context.yaml
 preload:
-  - memory/${device}/status.md
-  - memory/${device}/history.md
+  - memory/${device_name}/status.md
+  - memory/${device_name}/history.md
 ```
 
-- `${device}`：从声明所在目录向上逐级找 `.device` 文件（上限 64 级），取首个命中文件的第一个非空行（trim）；找不到或为空则回退主机名去掉尾部 `.local`。本机实况：`/Users/cairui/PCAgent/.device` 内容为 `MAGIT00198`。
-- `${hostname}`：主机名去掉尾部 `.local`（本机解析为 `MAGIT00198`）。
-- 未知的 `${...}` 保持字面量——注入时会以「无法读取」注记响亮暴露，不会静默吞掉。
-- 每次组装实时求值、不缓存；仅替换声明里的**路径**，不替换文件内容。目录结构与文件格式（本节其余部分）对分区目录同样适用：`memory/${device}/` 下的 `tasks.md` / `status.md` / `history.md` / `notes.md` 沿用下文各节格式。
+- `${device_name}` / `${pcagent_root}`：从声明所在目录向上找最近 `.device`（上限 64 级），只接受 YAML 两必填字符串 `device_name`（合法单目录名）和 `pcagent_root`（本机可访问的绝对目录）。不兼容单行格式和旧变量，不作主机名兜底。
+- `${hostname}`：主机名去掉尾部 `.local`，不依赖设备声明。
+- 未知变量、缺失/非法设备声明显式诊断，不静默吞掉。
+- `agents: [path/to/profile.md]` 直接读取简短能力 profile，在普通 preload 前合成含来源和父目录 cwd 的协作目录；按继承祖先→子、列表顺序规范路径去重，不递归目标声明、不生成实体索引。它属于同一固定 bootstrap 快照，后续编辑不自动刷新旧会话。
+- 每次组装实时求值、不缓存；仅替换声明里的**路径**，不替换文件内容。目录结构与文件格式（本节其余部分）对分区目录同样适用：`memory/${device_name}/` 下的 `tasks.md` / `status.md` / `history.md` / `notes.md` 沿用下文各节格式。
 
 ---
 

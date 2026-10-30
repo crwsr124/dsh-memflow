@@ -37,27 +37,38 @@ inherit: false           # 缺省；置 true 才向上合并祖先目录的声�
 
 未声明的目录仍按 0.2.x 行为加载 `memory/` 目录（legacy fallback），存量项目无需改动。声明存在时以声明为准。
 
-## 声明路径变量（0.4.0）
-
-声明被 git 托管、跨设备共享时，设备各自的记忆文件没法用一条静态路径写死。0.4.0 起声明路径支持两个内置变量：
+## 协作能力目录与设备路径变量（0.5.0）
 
 ```yaml
 # <工作目录>/.dsh/context.yaml
+agents:                         # profile 文件路径数组，不是目录或目标声明
+  - ${pcagent_root}/agents/dsh/profile.md
 preload:
-  - memory/${device}/status.md    # 每台设备各自的分区记忆
+  - memory/${device_name}/status.md
 ```
+
+`agents` 直接读取简短能力 profile，按实际继承链的祖先→子、列表顺序合成「协作能力目录」，置于普通 preload 之前。每项包含来源声明、规范 profile 路径、推导的 `cwd`（`.dsh/profile.md` 取 `.dsh` 上级所属目录，其余 profile 取文件父目录）与原文；不读取目标的 context/systemPrompt/memory，也不递归 agents，不写实体索引。现有文件使用 realpath 规范化（包括符号链接），不存在的路径使用绝对规范路径，首次出现保留。缺文件、空文件、目录、非法/空数组或元素、路径变量错误均显式出现在 bootstrap。profile 与普通 preload 共用字节预算及截断提示。
+
+目录沿现有 `context-preload` 首条消息持久化：旧会话不重投，fresh 获取新内容；`memoryBootstrap: false` 不读取 profile。ACP `clean` / `normal` 通过现有 ignoreDeclaration 隔离，不读取 agents 或 `.device`。
+
+从声明所在目录（extra 路径从 cwd）向上找最近 `.device`，最多 64 级；新版只接受下列 YAML：
+
+```yaml
+device_name: MAGIT00198
+pcagent_root: /Users/cairui/PCAgent
+```
+
+两字段均为必填非空字符串；设备名必须是合法单目录名，根必须为本机可访问的绝对目录。最近的文件非法即诊断，不越过它找祖先。重复/未知字段非法；不兼容旧单行格式与 `${device}`，不以主机名兜底。
 
 | 变量 | 解析值 |
 |------|--------|
-| `${device}` | 从**声明所在目录**（`.dsh` 的上级）起向上逐级查找 `.device` 文件（上限 64 级），取首个命中文件的**第一个非空行、trim 后**的值；找不到或内容为空则回退到主机名去掉尾部 `.local` |
-| `${hostname}` | 主机名去掉尾部 `.local` |
+| `${device_name}` | `.device` 的 `device_name` |
+| `${pcagent_root}` | `.device` 的 `pcagent_root` |
+| `${hostname}` | 主机名去掉尾部 `.local`；独立于 `.device` |
 
-解析顺序与规则：
+统一对 agents/systemPrompt/preload 与 env/config extra 路径生效，每次解析实时求值；未知或未闭合变量显式诊断。不支持 env/glob/递归变量替换，文件内容不替换。
 
-- 替换发生在 `resolveFrom` 这个唯一咽喉点，对 `systemPrompt` 与 `preload`、声明来源与 `DSH_CONTEXT_*`/config 来源的 extra 路径**统一生效**（extra 路径以会话工作目录为基准向上找 `.device`）。
-- **每次组装都重新求值，不做缓存**——与「声明文件每回合重读」的既有哲学一致；`.device` 是一行小文件，读取代价可忽略。
-- **未知的 `${...}` 保持字面量**：不删除、不报错，下游读取时自然产生「无法读取」注记，响亮暴露拼写错误。
-- 不支持 env 变量替换、glob、转义，也不引入通用 `var*` 键——声明格式保持极小面。变量在**路径**上替换；文件**内容**不做任何替换。
+**升级顺序**：先刷新所有安装副本；协调修改 `.device` 和全部旧变量声明；Web 走标准入口重启一次。headless/task/acp 新进程立即加载新实现，切换窗口内不要新起依赖旧 `${device}` 的会话。已有 bootstrap 不回写。
 
 ## 一个协议、两个载具
 
@@ -167,14 +178,9 @@ preload: [memory/status.md]       # perception → ONE fixed first user message,
 inherit: false                    # default: do not merge ancestors; set true to opt in
 ```
 
-**0.4.0 adds declared-path variables** for git-shared, multi-device declarations:
+**0.5.0 adds `agents` and strict YAML device descriptors.** `agents: [path/to/profile.md]` reads profiles directly into a source-labelled capability catalog before preload, deriving cwd from each profile's parent. Inherited declarations are processed outermost-first, with canonical-path first-occurrence deduplication. Target declarations are never traversed; no index file is generated. Invalid, empty, or missing profiles produce explicit diagnostics. The catalog uses the existing once-per-session bootstrap snapshot and shared byte budget; clean/normal do not read it.
 
-```yaml
-preload:
-  - memory/${device}/status.md
-```
-
-`${device}` walks up from the declaring directory to the first `.device` file (≤64 levels) and takes its first non-empty line, trimmed; missing or empty, it falls back to the host name minus the `.local` suffix. `${hostname}` is always that short host name. Unknown `${...}` stays literal and surfaces as an unreadable-path note downstream. Substitution happens in `resolveFrom` — the single choke point for declared and env/config-supplied paths alike — and is re-evaluated on every assembly (no cache). No env expansion, no glob, no escaping.
+Paths support `${device_name}`, `${pcagent_root}`, and independent `${hostname}`. The nearest `.device` must contain required YAML strings `device_name` (one legal directory name) and `pcagent_root` (accessible local absolute directory). Legacy single-line files and `${device}` are not supported; missing/invalid descriptors and unknown variables produce explicit diagnostics, without hostname fallback. Expansion is path-only and re-evaluated, never applied to file content.
 
 A dispatcher refines a single run through the child's environment — the only channel that survives a process boundary, since an out-of-process provider may not push `persona`:
 

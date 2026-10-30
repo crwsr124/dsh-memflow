@@ -7,22 +7,14 @@
  * any session opened in that directory gets that composition mechanically — in
  * every deployment (web, headless, ACP child), with no roster involved.
  *
- * 0.4.0 adds path variables for git-shared declarations. A declaration checked
- * into a multi-device repository can point at per-device files:
- *
- *   preload:
- *     - memory/${device}/status.md
- *
- * `${device}` walks UP from the declaring directory to the first `.device`
- * file (bounded like MAX_WALK_UP) and takes its first non-empty line,
- * trimmed; with no `.device` (or an empty one) it falls back to the host
- * name minus the `.local` suffix. `${hostname}` is always that short host
- * name. Unknown `${...}` references stay LITERAL — the downstream read then
- * reports the path as unreadable, which exposes the mistake loudly instead
- * of silently rewriting it. Substitution lives inside resolveFrom, the one
- * choke point for declared and env/config-supplied paths alike, and is
- * evaluated on EVERY assembly (no cache) — matching the premise that
- * declarations are re-read each turn; `.device` is a one-line file.
+ * 0.5.0 adds `agents: [path/to/profile.md]`: direct profile content with source
+ * and parent-directory cwd, deduplicated outermost-first, before normal preload
+ * in the existing once-per-session bootstrap. Target declarations are not read.
+ * Path variables are `${device_name}`, `${pcagent_root}`, `${hostname}` only.
+ * The nearest `.device` must be YAML with two required strings: device_name
+ * (one legal directory name), pcagent_root (an accessible local absolute dir).
+ * There is no legacy single-line format, `${device}`, or hostname fallback.
+ * Unknown variables produce explicit diagnostics; file content is never expanded.
  *
  * Declaration lives in `<dir>/.dsh/context.yaml`:
  *
@@ -126,6 +118,14 @@ function scalar(raw) {
 	return (hash === -1 ? text : text.slice(0, hash)).trim();
 }
 
+/** Preserve invalid YAML scalar types for strict path-list validation. */
+function pathScalar(raw) {
+	const value = scalar(raw);
+	const quoted = /^["']/.test(raw.trim());
+	if (!quoted && (/^(?:null|~|true|false|[-+]?\d+(?:\.\d+)?)$/i.test(value) || /^[{\[]/.test(value) || /:\s/.test(value))) return null;
+	return value;
+}
+
 /** Parse the supported YAML subset into a plain object. */
 function parseDeclaration(text, file) {
 	const result = {};
@@ -140,7 +140,7 @@ function parseDeclaration(text, file) {
 			if (key === null) throw new Error(`${file}:${index + 1}: sequence item outside a key`);
 			if (!Array.isArray(result[key])) result[key] = [];
 			const value = scalar(line.trim().slice(1));
-			if (value !== '') result[key].push(value);
+			result[key].push(key === 'agents' ? pathScalar(line.trim().slice(1)) : value);
 			continue;
 		}
 		if (indented) throw new Error(`${file}:${index + 1}: nested mappings are not supported`);
@@ -148,13 +148,14 @@ function parseDeclaration(text, file) {
 		if (colon === -1) throw new Error(`${file}:${index + 1}: expected "key: value"`);
 		key = line.slice(0, colon).trim();
 		if (key === '') throw new Error(`${file}:${index + 1}: empty key`);
+		if (Object.hasOwn(result, key)) throw new Error(`${file}:${index + 1}: duplicate key ${key}`);
 		const rest = line.slice(colon + 1).trim();
 		if (rest === '') {
 			result[key] = [];
 			continue;
 		}
 		if (rest.startsWith('[') && rest.endsWith(']')) {
-			result[key] = rest.slice(1, -1).split(',').map(scalar).filter((value) => value !== '');
+			result[key] = rest.slice(1, -1).trim() === '' ? [] : rest.slice(1, -1).split(',').map(key === 'agents' ? pathScalar : scalar);
 			key = null;
 			continue;
 		}
@@ -202,6 +203,8 @@ function loadDeclaration(file, logger) {
 			baseDir: path.dirname(path.dirname(file)),
 			systemPrompt: asList(parsed.systemPrompt ?? parsed.system_prompt ?? parsed.systemprompt),
 			preload: asList(parsed.preload ?? parsed.context),
+			agents: parsed.agents,
+			hasAgents: Object.hasOwn(parsed, 'agents'),
 			// Default false: a directory declares its OWN identity. Inheriting by
 			// default makes every nested project silently absorb its parent's
 			// protocol, which is exactly the coupling per-directory identity is
@@ -264,54 +267,57 @@ function shortHostname() {
 	}
 }
 
-/**
- * Walk up from `startDir` to the FIRST `.device` file and return its first
- * non-empty line, trimmed. An existing-but-empty `.device` is the hit: it
- * yields undefined, which sends `${device}` to the host-name fallback. The
- * bound matches MAX_WALK_UP — a declaration living deeper than that could not
- * be discovered either.
- */
-function readDeviceName(startDir) {
+/** Strict local YAML device descriptor. No legacy line or host-name fallback. */
+function readDevice(startDir) {
 	let dir = path.resolve(startDir);
 	for (let depth = 0; depth < MAX_WALK_UP; depth += 1) {
+		const file = path.join(dir, '.device');
 		let content;
-		try {
-			content = fs.readFileSync(path.join(dir, '.device'), 'utf8');
-		} catch {
+		try { content = fs.readFileSync(file, 'utf8'); } catch (error) {
+			if (error.code !== 'ENOENT') throw new Error(`${file}: ${error.message}`);
 			const parent = path.dirname(dir);
-			if (parent === dir) return undefined;
+			if (parent === dir) break;
 			dir = parent;
 			continue;
 		}
-		const line = content.split(/\r?\n/).find((entry) => entry.trim() !== '');
-		return line === undefined ? undefined : line.trim();
+		const device = parseDeclaration(content, file);
+		for (const key of ['device_name', 'pcagent_root']) {
+			const line = content.split(/\r?\n/).find((entry) => entry.startsWith(`${key}:`));
+			if (!line || typeof device[key] !== 'string' || pathScalar(line.slice(line.indexOf(':') + 1)) === null || !device[key].trim()) {
+				throw new Error(`${file}: ${key} must be a non-empty YAML string`);
+			}
+		}
+		if (Object.keys(device).some((key) => !['device_name', 'pcagent_root'].includes(key))) throw new Error(`${file}: unknown device field`);
+		if (device.device_name === '.' || device.device_name === '..' || /[<>:"/\\|?*\x00-\x20]/.test(device.device_name) || /[. ]$/.test(device.device_name) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(device.device_name)) throw new Error(`${file}: device_name must be a legal single directory name`);
+		if (!path.isAbsolute(device.pcagent_root)) throw new Error(`${file}: pcagent_root must be absolute on this machine`);
+		try {
+			if (!fs.statSync(device.pcagent_root).isDirectory()) throw new Error('not a directory');
+			fs.accessSync(device.pcagent_root, fs.constants.R_OK | fs.constants.X_OK);
+		} catch (error) { throw new Error(`${file}: pcagent_root is not accessible: ${error.message}`); }
+		return device;
 	}
-	return undefined;
+	throw new Error(`No .device found above ${startDir}`);
 }
 
-/**
- * Expand the two built-in path variables in a declared path. `baseDir` is the
- * declaring directory: which device this is belongs to where the declaration
- * lives, not to the session's cwd. Unknown `${...}` references stay literal —
- * no env expansion, no glob, no escaping; the declaration format stays a
- * deliberately small surface, and a typo surfaces as an unreadable path.
- */
+/** Expand only the explicitly supported path variables; never expand content. */
 function expandDeclaredPath(file, baseDir) {
 	if (!file.includes('${')) return file;
-	const hostname = shortHostname();
-	return file.replace(/\$\{([^}]*)\}/g, (reference, name) => {
-		if (name === 'device') return readDeviceName(baseDir) ?? hostname;
-		if (name === 'hostname') return hostname;
-		return reference;
+	let device;
+	const expanded = file.replace(/\$\{([^}]*)\}/g, (reference, name) => {
+		if (name === 'hostname') return shortHostname();
+		if (name !== 'device_name' && name !== 'pcagent_root') throw new Error(`Unknown path variable ${reference}`);
+		device ??= readDevice(baseDir);
+		return device[name];
 	});
+	if (expanded.includes('${')) throw new Error(`Invalid path variable in ${file}`);
+	return expanded;
 }
 
 /**
  * Resolve a declared path against the declaring directory, expanding the
  * built-in path variables (see expandDeclaredPath). Absolute paths expand
  * too, so a pinned tree can still carry one per-device segment. Evaluated on
- * EVERY resolution — declarations are re-read each turn, and `.device` is a
- * one-line file; caching here would be the plugin's only stale state.
+ * EVERY resolution — declarations and device descriptors are not cached.
  */
 function resolveFrom(baseDir, file) {
 	const expanded = expandDeclaredPath(file, baseDir);
@@ -486,18 +492,28 @@ function apply(ctx, config = {}) {
 				: discoverDeclarations(cwd, fileName, discover, ctx.logger);
 		const systemPrompt = [];
 		const preload = [];
+		const diagnostics = [];
+		const resolveInto = (target, base, file, source) => {
+			try { target.push(resolveFrom(base, file)); } catch (error) {
+				const diagnostic = `${source}: ${file}: ${error.message}`;
+				diagnostics.push(`（上下文路径错误: ${diagnostic}）`);
+				ctx.logger?.warn(`dsh-memflow: ${diagnostic}`);
+			}
+		};
 		for (const declaration of declarations) {
-			for (const file of declaration.systemPrompt) systemPrompt.push(resolveFrom(declaration.baseDir, file));
-			for (const file of declaration.preload) preload.push(resolveFrom(declaration.baseDir, file));
+			for (const file of declaration.systemPrompt) resolveInto(systemPrompt, declaration.baseDir, file, declaration.file);
+			for (const file of declaration.preload) resolveInto(preload, declaration.baseDir, file, declaration.file);
 		}
 		// Dispatch-supplied files come last: the dispatcher refines the directory's
 		// default identity, so its files must be able to override.
-		for (const file of extraSystemPrompt) systemPrompt.push(resolveFrom(cwd, file));
-		for (const file of extraPreload) preload.push(resolveFrom(cwd, file));
+		for (const file of extraSystemPrompt) resolveInto(systemPrompt, cwd, file, 'extra systemPrompt');
+		for (const file of extraPreload) resolveInto(preload, cwd, file, 'extra preload');
 		return {
 			systemPrompt: [...new Set(systemPrompt)],
 			preload: [...new Set(preload)],
 			declared: declarations.length > 0,
+			declarations,
+			diagnostics,
 		};
 	};
 
@@ -546,9 +562,41 @@ function apply(ctx, config = {}) {
 		const cwd = agent.session.header.cwd;
 		if (cwd === undefined || isSuppressed(cwd)) return undefined;
 		const plan = planFor(cwd);
-		if (plan.preload.length > 0) {
+		const catalog = [];
+		const seenAgents = new Set();
+		let used = 0;
+		for (const declaration of plan.declarations ?? []) {
+			if (!declaration.hasAgents) continue;
+			if (!Array.isArray(declaration.agents) || declaration.agents.length === 0) {
+				catalog.push(`（agents 声明错误: ${declaration.file}: agents 必须为非空 profile 文件路径数组）`);
+				continue;
+			}
+			for (const [index, file] of declaration.agents.entries()) {
+				if (typeof file !== 'string' || !file.trim()) {
+					catalog.push(`（agents 声明错误: ${declaration.file}: agents[${index}] 必须为非空路径字符串）`);
+					continue;
+				}
+				let abs;
+				try {
+					abs = resolveFrom(declaration.baseDir, file);
+					// realpath canonicalizes symlinks as well as dot segments for stable dedup.
+					try { abs = fs.realpathSync(abs); } catch { /* readForInjection diagnoses missing paths */ }
+				} catch (error) {
+					catalog.push(`（agents 路径错误: ${declaration.file}: ${file}: ${error.message}）`);
+					continue;
+				}
+				if (seenAgents.has(abs)) continue;
+				seenAgents.add(abs);
+				const loaded = readForInjection(abs, perFileBytes, totalBytes - used);
+				used += loaded.bytes;
+				const content = loaded.complete && !loaded.text.trim() ? `（profile 为空: ${abs}）` : loaded.text;
+				catalog.push(`=== profile: ${abs} ===\n来源声明: ${declaration.file}\ncwd: ${path.basename(path.dirname(abs)) === '.dsh' ? path.dirname(path.dirname(abs)) : path.dirname(abs)}\n${content}`);
+			}
+		}
+		if (plan.preload.length > 0 || catalog.length > 0 || plan.diagnostics?.length > 0) {
 			const parts = [];
-			let used = 0;
+			if (catalog.length > 0) parts.push(`协作能力目录:\n\n${catalog.join('\n\n')}`);
+			parts.push(...(plan.diagnostics ?? []));
 			for (const abs of plan.preload) {
 				const loaded = readForInjection(abs, perFileBytes, totalBytes - used);
 				used += loaded.bytes;
