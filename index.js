@@ -567,8 +567,8 @@ function apply(ctx, config = {}) {
 		let used = 0;
 		for (const declaration of plan.declarations ?? []) {
 			if (!declaration.hasAgents) continue;
-			if (!Array.isArray(declaration.agents) || declaration.agents.length === 0) {
-				catalog.push(`（agents 声明错误: ${declaration.file}: agents 必须为非空 profile 文件路径数组）`);
+			if (!Array.isArray(declaration.agents)) {
+				catalog.push(`（agents 声明错误: ${declaration.file}: agents 必须为 profile 文件路径数组（可为空））`);
 				continue;
 			}
 			for (const [index, file] of declaration.agents.entries()) {

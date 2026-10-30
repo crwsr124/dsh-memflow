@@ -47,7 +47,7 @@ preload:
   - memory/${device_name}/status.md
 ```
 
-`agents` 直接读取简短能力 profile，按实际继承链的祖先→子、列表顺序合成「协作能力目录」，置于普通 preload 之前。每项包含来源声明、规范 profile 路径、推导的 `cwd`（`.dsh` 上级所属目录）；每项路径及 realpath 目标都必须严格为 `.../.dsh/profile.md`，不接受普通 `a/profile.md` 或任意 `alias.md`，与原文；不读取目标的 context/systemPrompt/memory，也不递归 agents，不写实体索引。现有文件使用 realpath 规范化（包括符号链接），不存在的路径使用绝对规范路径，首次出现保留。缺文件、空文件、目录、非法/空数组或元素、路径变量错误均显式出现在 bootstrap。profile 与普通 preload 共用字节预算及截断提示。
+`agents` 直接读取简短能力 profile，按实际继承链的祖先→子、列表顺序合成「协作能力目录」，置于普通 preload 之前。每项包含来源声明、规范 profile 路径、推导的 `cwd`（`.dsh` 上级所属目录）；每项路径及 realpath 目标都必须严格为 `.../.dsh/profile.md`，不接受普通 `a/profile.md` 或任意 `alias.md`，与原文；不读取目标的 context/systemPrompt/memory，也不递归 agents，不写实体索引。现有文件使用 realpath 规范化（包括符号链接），不存在的路径使用绝对规范路径，首次出现保留。`agents: []` 合法，表示本声明无协作依赖，不生成协作目录（不清除继承来的依赖）。非数组、空字符串元素、缺文件、空文件、目录、非法元素及路径变量错误均显式出现在 bootstrap。profile 与普通 preload 共用字节预算及截断提示。
 
 目录沿现有 `context-preload` 首条消息持久化：旧会话不重投，fresh 获取新内容；`memoryBootstrap: false` 不读取 profile。ACP `clean` / `normal` 通过现有 ignoreDeclaration 隔离，不读取 agents 或 `.device`。
 

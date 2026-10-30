@@ -39,8 +39,15 @@ try {
  assert.match(await text(h),/UPDATED_CAPABILITY/,'fresh sees edited profile');
  for(const form of ['context-preload','memory-snapshot']) assert.equal((await h.run([{type:'user/message',data:{source:{plugin:'dsh-memflow',form}}}])).messages.length,0);
  assert.equal((await h.run([],'reject')).messages.length,0);
+ write('child/.dsh/context.yaml','agents: []');
+ assert.equal(await text(), '', 'empty agents array means no dependencies and no bootstrap catalog');
+ write('child/.dsh/context.yaml','agents: []\npreload: [status.md]');
+ assert.match(await text(), /ORDINARY_PRELOAD/);
+ assert.doesNotMatch(await text(), /协作能力目录|声明错误/);
+ write('child/.dsh/context.yaml','inherit: true\nagents: []');
+ assert.match(await text(), /UPDATED_CAPABILITY/, 'empty child list preserves inherited dependencies');
  write('empty/.dsh/profile.md','  \n');
- for(const [value,expected] of [['[]',/必须为非空/],['profile.md',/必须为非空/],['[null, true, 123, ""]',/agents\[0\].*非空/],['[../missing/.dsh/profile.md]',/无法读取/],['[../empty/.dsh/profile.md]',/profile 为空/],['[../empty]',/路径必须/],['[../a/profile.md]',/路径必须/],['[../alias.md]',/路径必须/],['[${typo}/.dsh/profile.md]',/Unknown path variable/]]) {
+ for(const [value,expected] of [['profile.md',/必须为 profile 文件路径数组/],['[""]',/agents\[0\].*非空/],['[null, true, 123, ""]',/agents\[0\].*非空/],['[../missing/.dsh/profile.md]',/无法读取/],['[../empty/.dsh/profile.md]',/profile 为空/],['[../empty]',/路径必须/],['[../a/profile.md]',/路径必须/],['[../alias.md]',/路径必须/],['[${typo}/.dsh/profile.md]',/Unknown path variable/]]) {
   write('child/.dsh/context.yaml',`agents: ${value}`);
   assert.match(await text(),expected,value);
  }
