@@ -321,7 +321,7 @@ function expandDeclaredPath(file, baseDir) {
  */
 function resolveFrom(baseDir, file) {
 	const expanded = expandDeclaredPath(file, baseDir);
-	return path.isAbsolute(expanded) ? expanded : path.resolve(baseDir, expanded);
+	return path.resolve(baseDir, expanded);
 }
 
 /**
