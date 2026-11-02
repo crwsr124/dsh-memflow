@@ -7,8 +7,8 @@
  * any session opened in that directory gets that composition mechanically — in
  * every deployment (web, headless, ACP child), with no roster involved.
  *
- * 0.5.0 adds `agents: [path/to/.dsh/profile.md]`: direct profile content with source
- * and owning-directory cwd (above .dsh), deduplicated outermost-first, before normal preload
+ * 0.5.0 adds `agents: [path/to/.dsh/profile.md]`: direct profile content with canonical
+ * path and owning-directory cwd (above .dsh), deduplicated outermost-first, before normal preload
  * in the existing once-per-session bootstrap. Target declarations are not read.
  * Path variables are `${device_name}`, `${pcagent_root}`, `${hostname}` only.
  * The nearest `.device` must be YAML with two required strings: device_name
@@ -595,12 +595,12 @@ function apply(ctx, config = {}) {
 				const loaded = readForInjection(abs, perFileBytes, totalBytes - used);
 				used += loaded.bytes;
 				const content = loaded.complete && !loaded.text.trim() ? `（profile 为空: ${abs}）` : loaded.text;
-				catalog.push(`=== profile: ${abs} ===\n来源声明: ${declaration.file}\ncwd: ${path.dirname(path.dirname(abs))}\n${content}`);
+				catalog.push(`=== agent简介: ${abs} ===\ncwd: ${path.dirname(path.dirname(abs))}\n${content}`);
 			}
 		}
 		if (plan.preload.length > 0 || catalog.length > 0 || plan.diagnostics?.length > 0) {
 			const parts = [];
-			if (catalog.length > 0) parts.push(`协作能力目录:\n\n${catalog.join('\n\n')}`);
+			if (catalog.length > 0) parts.push(catalog.join('\n\n'));
 			parts.push(...(plan.diagnostics ?? []));
 			for (const abs of plan.preload) {
 				const loaded = readForInjection(abs, perFileBytes, totalBytes - used);

@@ -26,12 +26,21 @@ try {
  assert.ok(output.indexOf('BETA_CAPABILITY')<output.indexOf('GAMMA_CAPABILITY'));
  assert.ok(output.indexOf('GAMMA_CAPABILITY')<output.indexOf('ORDINARY_PRELOAD'));
  assert.equal(output.match(/ALPHA_CAPABILITY/g).length,1);
- assert.match(output,/来源声明: .*context.yaml/);
- assert.ok(output.includes(`cwd: ${fs.realpathSync(path.join(root,'a'))}`));
+ assert.equal(output, '工作目录前置上下文:\n\n' + [
+  ...[['a','ALPHA_CAPABILITY'],['b','BETA_CAPABILITY'],['c','GAMMA_CAPABILITY']].map(([dir,body]) => {
+   const profile=fs.realpathSync(path.join(root,dir,'.dsh/profile.md'));
+   return `=== agent简介: ${profile} ===\ncwd: ${path.dirname(path.dirname(profile))}\n${body}`;
+  }),
+  `=== ${path.join(cwd,'status.md')} ===\nORDINARY_PRELOAD`,
+ ].join('\n\n'), 'exact presentation: outer heading, canonical profile heading, cwd and body only');
+ assert.doesNotMatch(output,/协作能力目录:|来源声明:|=== profile:/);
  assert.doesNotMatch(output,/DO_NOT_READ|recursive/);
  assert.equal(harness().sections(),'','profiles never enter system prompt');
  write('child/.dsh/context.yaml','inherit: true\nagents: [../alias/.dsh/profile.md]');
- assert.equal((await text()).match(/ALPHA_CAPABILITY/g).length,1,'symlink dedup');
+ const aliasOutput=await text();
+ assert.equal(aliasOutput.match(/ALPHA_CAPABILITY/g).length,1,'symlink dedup');
+ assert.ok(aliasOutput.includes(`=== agent简介: ${fs.realpathSync(path.join(root,'alias/.dsh/profile.md'))} ===`),'heading uses canonical profile path');
+ assert.doesNotMatch(aliasOutput,/\/alias\//,'symlink spelling never enters presentation');
  const h=harness(); const initial=await h.run(); const source=initial.messages[0].source;
  assert.equal(source.form,'context-preload'); assert.ok(initial.messages[0].id);
  write('a/.dsh/profile.md','UPDATED_CAPABILITY');

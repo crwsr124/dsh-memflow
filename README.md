@@ -47,7 +47,7 @@ preload:
   - memory/${device_name}/status.md
 ```
 
-`agents` 直接读取简短能力 profile，按实际继承链的祖先→子、列表顺序合成「协作能力目录」，置于普通 preload 之前。每项包含来源声明、规范 profile 路径、推导的 `cwd`（`.dsh` 上级所属目录）；每项路径及 realpath 目标都必须严格为 `.../.dsh/profile.md`，不接受普通 `a/profile.md` 或任意 `alias.md`，与原文；不读取目标的 context/systemPrompt/memory，也不递归 agents，不写实体索引。现有文件使用 realpath 规范化（包括符号链接），不存在的路径使用绝对规范路径，首次出现保留。`agents: []` 合法，表示本声明无协作依赖，不生成协作目录（不清除继承来的依赖）。非数组、空字符串元素、缺文件、空文件、目录、非法元素及路径变量错误均显式出现在 bootstrap。profile 与普通 preload 共用字节预算及截断提示。
+`agents` 直接读取简短能力 profile，按实际继承链的祖先→子、列表顺序合成「协作能力目录」，置于普通 preload 之前。每项仅包含 `=== agent简介: <规范profile绝对路径> ===`、推导的 `cwd`（`.dsh` 上级所属目录）及 profile 原文，不生成目录标题或来源声明行；外层仍为 `工作目录前置上下文:`。每项路径及 realpath 目标都必须严格为 `.../.dsh/profile.md`，不接受普通 `a/profile.md` 或任意 `alias.md`；不读取目标的 context/systemPrompt/memory，也不递归 agents，不写实体索引。现有文件使用 realpath 规范化（包括符号链接），不存在的路径使用绝对规范路径，首次出现保留。`agents: []` 合法，表示本声明无协作依赖，不生成协作目录（不清除继承来的依赖）。非数组、空字符串元素、缺文件、空文件、目录、非法元素及路径变量错误均显式出现在 bootstrap。profile 与普通 preload 共用字节预算及截断提示。
 
 目录沿现有 `context-preload` 首条消息持久化：旧会话不重投，fresh 获取新内容；`memoryBootstrap: false` 不读取 profile。ACP `clean` / `normal` 通过现有 ignoreDeclaration 隔离，不读取 agents 或 `.device`。
 
@@ -178,7 +178,7 @@ preload: [memory/status.md]       # perception → ONE fixed first user message,
 inherit: false                    # default: do not merge ancestors; set true to opt in
 ```
 
-**0.5.0 adds `agents` and strict YAML device descriptors.** `agents: [path/to/.dsh/profile.md]` requires both the resolved path and its realpath target to have exactly the `.../.dsh/profile.md` form. It reads profiles directly into a source-labelled capability catalog before preload, deriving cwd from the owning directory above `.dsh`. Arbitrary profile files and `alias.md` are rejected. Inherited declarations are processed outermost-first, with canonical-path first-occurrence deduplication. Target declarations are never traversed; no index file is generated. Invalid, empty, or missing profiles produce explicit diagnostics. The catalog uses the existing once-per-session bootstrap snapshot and shared byte budget; clean/normal do not read it.
+**0.5.0 adds `agents` and strict YAML device descriptors.** `agents: [path/to/.dsh/profile.md]` requires both the resolved path and its realpath target to have exactly the `.../.dsh/profile.md` form. It reads profiles directly before preload, with each entry formatted as `=== agent简介: <canonical absolute profile path> ===`, followed by `cwd` (the owning directory above `.dsh`) and the profile body. The outer `工作目录前置上下文:` heading remains; no catalog heading or source-declaration line is generated. Arbitrary profile files and `alias.md` are rejected. Inherited declarations are processed outermost-first, with canonical-path first-occurrence deduplication. Target declarations are never traversed; no index file is generated. Invalid, empty, or missing profiles produce explicit diagnostics. The catalog uses the existing once-per-session bootstrap snapshot and shared byte budget; clean/normal do not read it.
 
 Paths support `${device_name}`, `${pcagent_root}`, and independent `${hostname}`. The nearest `.device` must contain required YAML strings `device_name` (one legal directory name) and `pcagent_root` (accessible local absolute directory). Legacy single-line files and `${device}` are not supported; missing/invalid descriptors and unknown variables produce explicit diagnostics, without hostname fallback. Expansion is path-only and re-evaluated, never applied to file content.
 
