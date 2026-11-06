@@ -553,7 +553,7 @@ function apply(ctx, config = {}) {
 	// edits to memory files do not refresh it, exactly like a real perception.
 	const hasBootstrap = (session) => session.snapshotEvents().some((event) =>
 		event?.type === 'user/message'
-			&& event.data?.source?.plugin === name
+			&& (event.data?.source?.plugin === name || event.data?.source?.kind === `plugin:${name}`)
 			&& (event.data.source?.form === 'context-preload' || event.data.source?.form === 'memory-snapshot'));
 
 	const bootstrapMessageOf = (agent) => {
@@ -611,7 +611,7 @@ function apply(ctx, config = {}) {
 				id: randomUUID(),
 				role: 'user',
 				content: [{ type: 'text', text: `工作目录前置上下文:\n\n${parts.join('\n\n')}` }],
-				source: { kind: 'plugin', plugin: name, form: 'context-preload' },
+				source: (agent.session.header.version ?? 3) >= 4 ? { kind: `plugin:${name}`, form: 'context-preload' } : { kind: 'plugin', plugin: name, form: 'context-preload' },
 			};
 		}
 		// No declaration (or an empty one): fall back to 0.2.x mechanical memory/
@@ -637,7 +637,7 @@ function apply(ctx, config = {}) {
 			id: randomUUID(),
 			role: 'user',
 			content: [{ type: 'text', text }],
-			source: { kind: 'plugin', plugin: name, form: 'memory-snapshot' },
+			source: (agent.session.header.version ?? 3) >= 4 ? { kind: `plugin:${name}`, form: 'memory-snapshot' } : { kind: 'plugin', plugin: name, form: 'memory-snapshot' },
 		};
 	};
 

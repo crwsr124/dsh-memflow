@@ -203,3 +203,7 @@ dsh plugin --profile <name> add github:crwsr124/dsh-memflow
 ```
 
 A community project, not affiliated with DeepSeek.
+
+## 0.2.2 format v4 source compatibility (0.5.1)
+
+Session format v4 forbids the retired `kind: 'plugin'` durable-message source. On a v4 session the bootstrap message now uses `{ kind: 'plugin:dsh-memflow', form }`; v3 sessions keep the legacy wrapper. Bootstrap detection accepts both shapes, so a migrated v3 transcript is not re-injected.
